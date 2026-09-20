@@ -1,4 +1,4 @@
-"""Generate the Bunshin multi-cloud (AWS + Google Cloud) architecture diagram."""
+"""Generate the Bunshin multi-region AWS architecture diagram."""
 
 from pathlib import Path
 
@@ -9,16 +9,14 @@ from diagrams.aws.network import (
     ELB,
     Endpoint,
     GlobalAccelerator,
+    InternetGateway,
+    NATGateway,
     Route53,
-    SiteToSiteVpn,
 )
-from diagrams.aws.security import WAF
+from diagrams.aws.security import WAF, SecretsManager
 from diagrams.custom import Custom
-from diagrams.gcp.compute import KubernetesEngine
-from diagrams.gcp.database import Firestore
-from diagrams.gcp.network import CDN, DNS, LoadBalancing, Armor, VPN
-from diagrams.gcp.storage import GCS
 from diagrams.onprem.client import Users
+from diagrams.onprem.network import Internet
 
 CLUSTER_FONT = {"fontsize": "20", "fontname": "Sans-Serif Bold"}
 
@@ -53,9 +51,12 @@ def aws_region(name: str, cidr: str, azs: str) -> dict[str, object]:
     with Cluster(name, graph_attr={**CLUSTER_FONT, "margin": "20"}):
         waf = WAF("AWS WAF\nREGIONAL ACL\napi-ingress ALB")
         ddb = Dynamodb("DynamoDB\nbunshin-runners")
+        secret = SecretsManager("Secrets Manager\nbunshin-jev-api-key")
 
         with Cluster(f"VPC {cidr}", graph_attr={**CLUSTER_FONT, "margin": "16"}):
-            vpn = SiteToSiteVpn("Site-to-Site VPN\nVGW + BGP")
+            with Cluster("Public Subnets", graph_attr={**CLUSTER_FONT, "margin": "16"}):
+                igw = InternetGateway("Internet Gateway")
+                nat = NATGateway("NAT Gateway\nregional")
 
             with Cluster(f"Private Subnets ({azs})", graph_attr={**CLUSTER_FONT, "margin": "20"}):
                 api_alb = ELB("API Ingress ALB\ninternal HTTPS")
@@ -63,12 +64,12 @@ def aws_region(name: str, cidr: str, azs: str) -> dict[str, object]:
                 private_dns = Route53(f"Private DNS\n{name}.domain")
 
                 with Cluster("ECS Cluster: bunshin", graph_attr={**CLUSTER_FONT, "margin": "24"}):
-                    nginx = ECS("NGINX\n1 task / ARM64")
-                    runner = ECS("Runner\nFargate / x86_64")
-                    broker = ECS("Broker\n1 task / ARM64")
+                    nginx = ECS("NGINX\nFargate / ARM64")
+                    runner = ECS("Runner\nFargate / ARM64\ndebian-slim + bash")
+                    broker = ECS("Broker\nFargate / ARM64")
 
-                vpce_gateway = Endpoint("Gateway VPCE\nDynamoDB")
-                vpce_interface = Endpoint("Interface VPCE\nECR / Logs")
+                vpce_gateway = Endpoint("Gateway VPCE\nDynamoDB / S3")
+                vpce_interface = Endpoint("Interface VPCE\nECR / Logs / Secrets Manager")
 
                 api_alb >> Edge(label="static + /api/*") >> nginx
                 internal_alb >> nginx
@@ -79,7 +80,11 @@ def aws_region(name: str, cidr: str, azs: str) -> dict[str, object]:
                 vpce_gateway >> Edge(style="invis") >> api_alb
                 vpce_interface >> Edge(style="invis") >> internal_alb
 
+            nat >> igw
+            runner >> Edge(label="HTTPS egress", style="dashed", constraint="false") >> nat
+
         broker >> Edge(constraint="false") >> ddb
+        vpce_interface >> Edge(label="GetSecretValue", style="dashed", constraint="false") >> secret
         waf >> Edge(style="invis") >> ddb
 
     return {
@@ -89,48 +94,13 @@ def aws_region(name: str, cidr: str, azs: str) -> dict[str, object]:
         "broker": broker,
         "runner": runner,
         "private_dns": private_dns,
-        "vpn": vpn,
-    }
-
-
-def gcp_region(name: str, project_region: str) -> dict[str, object]:
-    with Cluster(name, graph_attr={**CLUSTER_FONT, "margin": "20"}):
-        firestore = Firestore(f"Firestore Native\n{project_region}")
-
-        with Cluster(f"VPC bunshin-{name}", graph_attr={**CLUSTER_FONT, "margin": "16"}):
-            vpn = VPN("HA VPN Gateway\n+ Cloud Router (BGP)")
-
-            with Cluster("Private Subnet (workload + proxy-only)", graph_attr={**CLUSTER_FONT, "margin": "20"}):
-                rilb = LoadBalancing("Regional Internal LB\ngke-l7-rilb")
-                private_dns = DNS(f"Cloud DNS private\n{project_region}.domain")
-
-                with Cluster("GKE Autopilot: bunshin", graph_attr={**CLUSTER_FONT, "margin": "24"}):
-                    nginx = KubernetesEngine("nginx Pod\nx86_64")
-                    runner = KubernetesEngine("runner Pod\nx86_64")
-                    broker = KubernetesEngine("broker Pod\nx86_64")
-
-                rilb >> nginx
-                private_dns >> rilb
-                nginx >> Edge(label="proxy") >> runner
-                nginx >> Edge(label="resolve") >> broker
-                runner >> Edge(label="register", constraint="false") >> broker
-                rilb >> Edge(style="invis") >> private_dns
-
-        broker >> firestore
-
-    return {
-        "rilb": rilb,
-        "nginx": nginx,
-        "broker": broker,
-        "runner": runner,
-        "private_dns": private_dns,
-        "vpn": vpn,
+        "igw": igw,
     }
 
 
 def main() -> None:
     with Diagram(
-        "Bunshin - Multi-Cloud Architecture (AWS + Google Cloud)",
+        "Bunshin - Multi-Region AWS Architecture",
         show=False,
         filename=OUTPUT_FILE,
         outformat="png",
@@ -151,6 +121,8 @@ def main() -> None:
         users >> route53
         users >> ns1
 
+        jev = Internet("Jev (TypeSafe System One)\napi.typesafe.ai")
+
         with Cluster("AWS", graph_attr={**CLUSTER_FONT, "margin": "24", "bgcolor": "#FFF7EC"}):
             accelerator = GlobalAccelerator("Global Accelerator\napex static IPs")
 
@@ -164,42 +136,11 @@ def main() -> None:
             apne3["nginx"] >> Edge(label="fallback (VPC Peering)", style="dashed", constraint="false") >> apne1["internal_alb"]
             apne1["private_dns"] >> Edge(label="VPC peering DNS", style="dashed", constraint="false") >> apne3["private_dns"]
 
-        with Cluster("Google Cloud", graph_attr={**CLUSTER_FONT, "margin": "24", "bgcolor": "#EEF4FF"}):
-            armor = Armor("Cloud Armor\nOWASP rules")
-            global_lb = LoadBalancing("Global External LB\nAnycast IP")
-            cloud_cdn = CDN("Cloud CDN")
-            gcs = GCS("Cloud Storage\ndual-region asia1")
+        route53 >> accelerator
+        ns1 >> accelerator
 
-            armor >> global_lb
-            global_lb >> Edge(label="PATH: / (static)") >> cloud_cdn >> gcs
-
-            asne1 = gcp_region("asne1", "asia-northeast1")
-            asne2 = gcp_region("asne2", "asia-northeast2")
-
-            global_lb >> Edge(label="PATH: /api/*\nsessionAffinity=CLIENT_IP") >> asne1["nginx"]
-            global_lb >> Edge(label="PATH: /api/*\nsessionAffinity=CLIENT_IP") >> asne2["nginx"]
-
-            asne1["nginx"] >> Edge(label="fallback (VPC Peering)", style="dashed", constraint="false") >> asne2["rilb"]
-            asne2["nginx"] >> Edge(label="fallback (VPC Peering)", style="dashed", constraint="false") >> asne1["rilb"]
-            asne1["private_dns"] >> Edge(label="cross-region DNS", style="dashed", constraint="false") >> asne2["private_dns"]
-
-        route53 >> Edge(label="AWS 50%") >> accelerator
-        route53 >> Edge(label="GCP 50%") >> global_lb
-        ns1 >> Edge(label="AWS 50%") >> accelerator
-        ns1 >> Edge(label="GCP 50%") >> global_lb
-
-        def vpn_edge(labeled: bool = False) -> Edge:
-            return Edge(
-                label="HA VPN mesh\n(BGP, apne1/apne3 x asne1/asne2 = 4 tunnels)" if labeled else "",
-                style="dashed",
-                color="#888888",
-                constraint="false",
-            )
-
-        apne1["vpn"] >> vpn_edge(labeled=True) >> asne1["vpn"]
-        apne1["vpn"] >> vpn_edge() >> asne2["vpn"]
-        apne3["vpn"] >> vpn_edge() >> asne1["vpn"]
-        apne3["vpn"] >> vpn_edge() >> asne2["vpn"]
+        apne1["igw"] >> Edge(label="validate command", style="dashed", constraint="false") >> jev
+        apne3["igw"] >> Edge(style="dashed", constraint="false") >> jev
 
 
 if __name__ == "__main__":

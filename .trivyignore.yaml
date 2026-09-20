@@ -1,0 +1,101 @@
+vulnerabilities:
+  # Gems bundled with the lolcat closure.
+  # The runner already runs arbitrary user commands.
+  # These gems sit outside its trust boundary.
+  - id: CVE-2026-41316
+    paths:
+      - "**/*ruby-3.4*/**"
+    statement: erb gem bundled with the Ruby devshell tool
+  - id: CVE-2026-54696
+    paths:
+      - "**/*ruby-3.4*/**"
+    statement: json gem bundled with the Ruby devshell tool
+  - id: CVE-2026-42245
+    paths:
+      - "**/*ruby-3.4*/**"
+    statement: net-imap gem bundled with the Ruby devshell tool
+  - id: CVE-2026-42246
+    paths:
+      - "**/*ruby-3.4*/**"
+    statement: net-imap gem bundled with the Ruby devshell tool
+  - id: CVE-2026-42256
+    paths:
+      - "**/*ruby-3.4*/**"
+    statement: net-imap gem bundled with the Ruby devshell tool
+  - id: CVE-2026-42257
+    paths:
+      - "**/*ruby-3.4*/**"
+    statement: net-imap gem bundled with the Ruby devshell tool
+  - id: CVE-2026-42258
+    paths:
+      - "**/*ruby-3.4*/**"
+    statement: net-imap gem bundled with the Ruby devshell tool
+  - id: CVE-2026-47240
+    paths:
+      - "**/*ruby-3.4*/**"
+    statement: net-imap gem bundled with the Ruby devshell tool
+  - id: CVE-2026-47241
+    paths:
+      - "**/*ruby-3.4*/**"
+    statement: net-imap gem bundled with the Ruby devshell tool
+  - id: CVE-2026-47242
+    paths:
+      - "**/*ruby-3.4*/**"
+    statement: net-imap gem bundled with the Ruby devshell tool
+  - id: CVE-2026-80212
+    paths:
+      - "**/*ruby-3.4*/**"
+    statement: resolv gem bundled with the Ruby devshell tool
+  - id: CVE-2026-80213
+    paths:
+      - "**/*ruby-3.4*/**"
+    statement: resolv gem bundled with the Ruby devshell tool
+misconfigurations:
+  - id: DS-0026
+    statement: health check is managed by compose or orchestrator
+  - id: DS-0002
+    paths:
+      - runner/Dockerfile
+    statement: runner executes user commands and requires root
+  # GKE Autopilot enforces baseline pod / container securityContext
+  # (allowPrivilegeEscalation, capability drops, runAsNonRoot,
+  # readOnlyRootFilesystem, runAsUser, seccomp, hostPath restrictions),
+  # so re-asserting them in workload manifests is redundant. Image tag is
+  # always a git SHA set by the deploy script, so the "tag pinning" and
+  # "pull-always" checks don't apply either.
+  - id: KSV-0001
+    paths: ["deploy/google-cloud/**"]
+    statement: Autopilot enforces allowPrivilegeEscalation=false
+  - id: KSV-0003
+    paths: ["deploy/google-cloud/**"]
+    statement: Autopilot enforces capability drops
+  - id: KSV-0004
+    paths: ["deploy/google-cloud/**"]
+    statement: Autopilot enforces capability drops
+  - id: KSV-0012
+    paths: ["deploy/google-cloud/**"]
+    statement: Autopilot enforces runAsNonRoot
+  - id: KSV-0014
+    paths: ["deploy/google-cloud/**"]
+    statement: nginx and runner need writable rootfs; broker/runner containers similar
+  - id: KSV-0020
+    paths: ["deploy/google-cloud/base/deploy-*.yaml"]
+    statement: Autopilot manages runAsUser
+  - id: KSV-0021
+    paths: ["deploy/google-cloud/base/deploy-*.yaml"]
+    statement: Autopilot manages runAsGroup
+  - id: KSV-0030
+    paths: ["deploy/google-cloud/**"]
+    statement: Autopilot enforces baseline pod-level securityContext
+  - id: KSV-0104
+    paths: ["deploy/google-cloud/**"]
+    statement: Autopilot manages seccompProfile
+  - id: KSV-0106
+    paths: ["deploy/google-cloud/**"]
+    statement: Autopilot enforces baseline capability drops
+  - id: KSV-0111
+    paths: ["deploy/google-cloud/**"]
+    statement: Autopilot manages fsGroupChangePolicy
+  - id: KSV-0118
+    paths: ["deploy/google-cloud/base/deploy-*.yaml"]
+    statement: Autopilot enforces container-level securityContext defaults

@@ -1,0 +1,47 @@
+{
+  "family": "bunshin-broker",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "{{ tfstatef `module.apne3.aws_iam_role.ecs_task_execution[%q].arn` `broker` }}",
+  "taskRoleArn": "{{ tfstatef `module.apne3.aws_iam_role.task[%q].arn` `broker` }}",
+  "runtimePlatform": {
+    "cpuArchitecture": "ARM64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "containerDefinitions": [
+    {
+      "name": "broker",
+      "image": "{{ tfstate `data.aws_caller_identity.current.account_id` }}.dkr.ecr.ap-northeast-3.amazonaws.com/bunshin/broker:{{ must_env `IMAGE_TAG` }}",
+      "essential": true,
+      "readonlyRootFilesystem": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "AWS_REGION", "value": "ap-northeast-3" },
+        { "name": "STACK_NAME", "value": "ap-northeast-3" },
+        { "name": "BUNSHIN_STORE", "value": "dynamodb" },
+        { "name": "BUNSHIN_STACKS", "value": "{{ must_env `BUNSHIN_STACKS` }}" },
+        { "name": "RUNNER_API_PORT", "value": "3000" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "{{ tfstatef `module.apne3.aws_cloudwatch_log_group.ecs[%q].name` `broker` }}",
+          "awslogs-region": "ap-northeast-3",
+          "awslogs-stream-prefix": "broker"
+        }
+      }
+    }
+  ],
+  "tags": [
+    { "key": "Project", "value": "Bunshin" },
+    { "key": "ManagedBy", "value": "ecspresso" },
+    { "key": "Service", "value": "broker" }
+  ]
+}

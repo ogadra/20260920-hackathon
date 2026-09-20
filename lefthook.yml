@@ -1,0 +1,87 @@
+glob_matcher: doublestar
+
+pre-commit:
+  parallel: false
+  commands:
+    001_fmt_runner:
+      root: "runner/"
+      glob: "*.go"
+      stage_fixed: true
+      run: gofmt -w {staged_files}
+    002_fmt_check_runner:
+      root: "runner/"
+      glob: "*.go"
+      run: gofmt -l {staged_files} | grep . && exit 1 || true
+    003_vet_runner:
+      root: "runner/"
+      glob: "*.go"
+      run: go vet ./...
+    011_fmt_broker:
+      root: "broker/"
+      glob: "*.go"
+      stage_fixed: true
+      run: gofmt -w {staged_files}
+    012_fmt_check_broker:
+      root: "broker/"
+      glob: "*.go"
+      run: gofmt -l {staged_files} | grep . && exit 1 || true
+    013_vet_broker:
+      root: "broker/"
+      glob: "*.go"
+      run: go vet ./...
+    021_terraform_fmt_aws:
+      root: "terraform/aws/"
+      glob: "*.tf"
+      stage_fixed: true
+      run: terraform fmt {staged_files}
+    021_terraform_fmt_google_cloud:
+      root: "terraform/google-cloud/"
+      glob: "*.tf"
+      stage_fixed: true
+      run: terraform fmt {staged_files}
+    022_terraform_fmt_check_aws:
+      root: "terraform/aws/"
+      glob: "*.tf"
+      run: terraform fmt -check {staged_files}
+    022_terraform_fmt_check_google_cloud:
+      root: "terraform/google-cloud/"
+      glob: "*.tf"
+      run: terraform fmt -check {staged_files}
+    023_terraform_validate_aws:
+      root: "terraform/aws/"
+      glob: "*.tf"
+      run: terraform validate -json | jq -e '.warning_count == 0 and .error_count == 0'
+    023_terraform_validate_google_cloud:
+      root: "terraform/google-cloud/"
+      glob: "*.tf"
+      run: terraform validate -json | jq -e '.warning_count == 0 and .error_count == 0'
+    024_tflint_aws:
+      root: "terraform/aws/"
+      glob: "*.tf"
+      run: tflint --init && tflint
+    024_tflint_google_cloud:
+      root: "terraform/google-cloud/"
+      glob: "*.tf"
+      run: tflint --init && tflint
+    031_fix_front:
+      root: "front/"
+      glob: "**/*.{ts,tsx,css,html}"
+      stage_fixed: true
+      run: pnpm check --fix
+    032_check_front:
+      root: "front/"
+      glob: "**/*.{ts,tsx,css,html}"
+      run: pnpm check
+    025_checkov:
+      run: |
+        untracked=$(git ls-files --others --ignored --exclude-standard --directory | grep '/$' | sed 's|/$||;s|\.|\\.|g' | paste -sd'|')
+        checkov -d . --quiet --compact --external-checks-dir terraform/checkov --skip-path "($untracked)"
+    041_nginx_config_test:
+      glob: "nginx/**/*.conf"
+      run: docker build --target config-test --build-arg CLOUD=AWS -f nginx/Dockerfile . && docker build --target config-test --build-arg CLOUD=GOOGLE_CLOUD -f nginx/Dockerfile .
+    004_gitleaks:
+      run: gitleaks protect --staged
+    005_trivy:
+      run: |
+        untracked=$(git ls-files --others --ignored --exclude-standard --directory | grep '/$' | sed 's|/$||' | paste -sd,)
+        trivy config . --skip-dirs "$untracked"

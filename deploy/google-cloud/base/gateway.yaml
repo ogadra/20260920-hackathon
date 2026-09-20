@@ -1,0 +1,21 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: bunshin-internal
+  namespace: bunshin
+spec:
+  gatewayClassName: gke-l7-rilb
+  addresses:
+    - type: NamedAddress
+      value: ${INTERNAL_LB_NAME}
+  listeners:
+    - name: https
+      port: 443
+      protocol: HTTPS
+      tls:
+        mode: Terminate
+        options:
+          networking.gke.io/cert-manager-certs: ${INTERNAL_LB_NAME}
+      allowedRoutes:
+        namespaces:
+          from: Same

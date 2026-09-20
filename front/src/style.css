@@ -1,0 +1,209 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  font-size: 20px;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  font-family: monospace;
+}
+
+.status {
+  padding: 8px 12px;
+  background: #2d2d2d;
+  color: #aaa;
+}
+
+.transcript {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  padding: 56px 12px 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.cell {
+  border-left: 3px solid transparent;
+  padding-left: 9px;
+  margin-bottom: 24px;
+}
+
+.cell[data-running] {
+  border-left-color: #0e639c;
+}
+
+.cell-command {
+  display: flex;
+  gap: 8px;
+  padding-bottom: 6px;
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+
+.cell-prompt {
+  color: #4fc3f7;
+}
+
+.cell-output[hidden] {
+  display: none;
+}
+
+.composer {
+  border-top: 1px solid #333;
+}
+
+.presets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.preset {
+  padding: 8px 14px;
+  border: 1px solid #3c3c3c;
+  border-radius: 6px;
+  background: #2d2d2d;
+  color: #d4d4d4;
+  font-family: monospace;
+  font-size: 18px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.preset:hover:enabled {
+  background: #3a3a3a;
+}
+
+.preset:disabled {
+  color: #666;
+  cursor: not-allowed;
+}
+
+.input-bar {
+  display: flex;
+}
+
+.input-bar input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border: none;
+  background: #2d2d2d;
+  color: #d4d4d4;
+  font-family: monospace;
+  font-size: 20px;
+}
+
+.input-bar button {
+  padding: 8px 16px;
+  border: none;
+  background: #0e639c;
+  color: #fff;
+  font-family: monospace;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.preset:focus-visible,
+.input-bar input:focus-visible,
+.input-bar button:focus-visible {
+  outline: 2px solid #4fc3f7;
+  outline-offset: -2px;
+}
+
+.input-bar button:disabled {
+  background: #333;
+  color: #666;
+  cursor: not-allowed;
+}
+
+.stack-info-button {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  padding: 6px 14px;
+  font-family: monospace;
+  font-size: 16px;
+  color: #d4d4d4;
+  background: rgba(30, 30, 30, 0.9);
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.stack-info-button:hover:enabled {
+  background: rgba(60, 60, 60, 0.95);
+}
+
+.stack-info-button:disabled {
+  color: #666;
+  cursor: not-allowed;
+}
+
+.stack-info-button:focus-visible {
+  outline: 2px solid #4fc3f7;
+  outline-offset: 2px;
+}
+
+.stack-info-dialog {
+  inset: 0;
+  margin: auto;
+  min-width: 340px;
+  padding: 28px 32px;
+  color: #d4d4d4;
+  background: #252526;
+  border: 1px solid #3c3c3c;
+  border-radius: 8px;
+  font-family: monospace;
+  font-size: 20px;
+}
+
+.stack-info-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.stack-info-title {
+  margin: 0 0 20px;
+  font-size: 20px;
+  font-weight: bold;
+  text-align: center;
+}
+
+.stack-info-list {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 10px 20px;
+  margin: 0 auto 24px;
+  width: fit-content;
+}
+
+.stack-info-list dt {
+  color: #808080;
+}
+
+.stack-info-actions {
+  text-align: center;
+}
+
+.stack-info-actions button {
+  padding: 8px 24px;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  background: #2d2d2d;
+  color: #d4d4d4;
+  font-family: monospace;
+  font-size: 18px;
+  cursor: pointer;
+}

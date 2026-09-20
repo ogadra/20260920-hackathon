@@ -1,0 +1,44 @@
+{
+  "launchType": "FARGATE",
+  "desiredCount": {{ must_env `NGINX_DESIRED_COUNT` }},
+  "healthCheckGracePeriodSeconds": 60,
+  "networkConfiguration": {
+    "awsvpcConfiguration": {
+      "subnets": [
+        "{{ tfstate `module.apne1.aws_subnet.apne1_private[0].id` }}",
+        "{{ tfstate `module.apne1.aws_subnet.apne1_private[1].id` }}",
+        "{{ tfstate `module.apne1.aws_subnet.apne1_private[2].id` }}"
+      ],
+      "securityGroups": [
+        "{{ tfstate `module.apne1.aws_security_group.nginx.id` }}"
+      ],
+      "assignPublicIp": "DISABLED"
+    }
+  },
+  "loadBalancers": [
+    {
+      "targetGroupArn": "{{ tfstate `module.apne1.aws_lb_target_group.api_ingress_nginx.arn` }}",
+      "containerName": "nginx",
+      "containerPort": 8080
+    },
+    {
+      "targetGroupArn": "{{ tfstate `module.apne1.aws_lb_target_group.internal_nginx.arn` }}",
+      "containerName": "nginx",
+      "containerPort": 8080
+    }
+  ],
+  "deploymentConfiguration": {
+    "deploymentCircuitBreaker": {
+      "enable": true,
+      "rollback": true
+    },
+    "maximumPercent": 200,
+    "minimumHealthyPercent": 100
+  },
+  "propagateTags": "SERVICE",
+  "tags": [
+    { "key": "Project", "value": "Bunshin" },
+    { "key": "ManagedBy", "value": "ecspresso" },
+    { "key": "Service", "value": "nginx" }
+  ]
+}

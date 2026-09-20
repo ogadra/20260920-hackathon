@@ -1,0 +1,15 @@
+exit-code: 1
+ignorefile: .trivyignore.yaml
+rego:
+  data:
+    - .trivy-data
+scan:
+  skip-dirs:
+    - .claude
+    - .worktrees
+    - /nix/store/*-source
+severity:
+  - LOW
+  - MEDIUM
+  - HIGH
+  - CRITICAL

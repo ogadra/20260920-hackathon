@@ -1,0 +1,57 @@
+name: Terraform
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "terraform/archive/**"
+      - "terraform/aws/**"
+      - "terraform/google-cloud/**"
+      - "terraform/shared/**"
+      - ".github/workflows/terraform.yml"
+  pull_request:
+    paths:
+      - "terraform/archive/**"
+      - "terraform/aws/**"
+      - "terraform/google-cloud/**"
+      - "terraform/shared/**"
+      - ".github/workflows/terraform.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        vendor: ["terraform/archive", "terraform/aws", "terraform/google-cloud", "terraform/shared"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: "1.15"
+      - name: terraform fmt check
+        run: terraform -chdir=${{ matrix.vendor }} fmt -check
+      - name: terraform init
+        run: terraform -chdir=${{ matrix.vendor }} init -backend=false
+      - name: terraform validate
+        run: terraform -chdir=${{ matrix.vendor }} validate -json | jq -e '.warning_count == 0 and .error_count == 0'
+
+  tflint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        vendor: ["terraform/archive", "terraform/aws", "terraform/google-cloud", "terraform/shared"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: terraform-linters/setup-tflint@1cf010d3c7aef302051ccdb68c14c5dc2efa34ef # v6.3.1
+      - name: tflint init
+        run: cd ${{ matrix.vendor }} && tflint --init
+      - name: tflint
+        run: cd ${{ matrix.vendor }} && tflint

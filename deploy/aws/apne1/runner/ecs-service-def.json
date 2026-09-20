@@ -1,0 +1,31 @@
+{
+  "launchType": "FARGATE",
+  "desiredCount": {{ must_env `RUNNER_DESIRED_COUNT` }},
+  "networkConfiguration": {
+    "awsvpcConfiguration": {
+      "subnets": [
+        "{{ tfstate `module.apne1.aws_subnet.apne1_private[0].id` }}",
+        "{{ tfstate `module.apne1.aws_subnet.apne1_private[1].id` }}",
+        "{{ tfstate `module.apne1.aws_subnet.apne1_private[2].id` }}"
+      ],
+      "securityGroups": [
+        "{{ tfstate `module.apne1.aws_security_group.runner.id` }}"
+      ],
+      "assignPublicIp": "DISABLED"
+    }
+  },
+  "deploymentConfiguration": {
+    "deploymentCircuitBreaker": {
+      "enable": true,
+      "rollback": true
+    },
+    "maximumPercent": 200,
+    "minimumHealthyPercent": 100
+  },
+  "propagateTags": "SERVICE",
+  "tags": [
+    { "key": "Project", "value": "Bunshin" },
+    { "key": "ManagedBy", "value": "ecspresso" },
+    { "key": "Service", "value": "runner" }
+  ]
+}

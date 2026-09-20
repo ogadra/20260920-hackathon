@@ -1,0 +1,7 @@
+ksv0125:
+  trusted_registries:
+    # KSV-0125 uses endswith() on the registry host, so this passes any
+    # "*docker.pkg.dev" — i.e. Artifact Registry in any GCP project, not
+    # just ours. The actual project scope is enforced upstream by the
+    # runner GSA's pull permission, not here.
+    - "docker.pkg.dev"

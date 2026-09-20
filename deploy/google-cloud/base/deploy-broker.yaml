@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: broker
+  namespace: bunshin
+  labels:
+    app: broker
+  annotations:
+    checkov.io/skip1: CKV_K8S_14=image tag is a git SHA (immutable); latest is not used
+    checkov.io/skip2: CKV_K8S_15=image tag is a git SHA (immutable); Always is redundant
+    checkov.io/skip3: CKV_K8S_20=Autopilot blocks privilege escalation at admission
+    checkov.io/skip4: CKV_K8S_22=broker needs writable rootfs for firestore client
+    checkov.io/skip5: CKV_K8S_23=Autopilot forbids running as root at admission
+    checkov.io/skip6: CKV_K8S_28=Autopilot blocks NET_RAW and other elevated capabilities
+    checkov.io/skip7: CKV_K8S_29=Autopilot enforces baseline pod-level securityContext
+    checkov.io/skip8: CKV_K8S_30=Autopilot enforces baseline container-level securityContext
+    checkov.io/skip9: CKV_K8S_31=Autopilot enforces runtime/default seccomp profile
+    checkov.io/skip10: CKV_K8S_37=Autopilot enforces baseline capability drops
+    checkov.io/skip11: CKV_K8S_38=broker needs SA token for Workload Identity federation
+    checkov.io/skip12: CKV_K8S_40=Autopilot manages runAsUser
+    checkov.io/skip13: CKV_K8S_43=image tag is a git SHA (immutable); digest form is redundant
+    checkov.io/skip14: CKV2_K8S_6=Autopilot provides default-deny NetworkPolicy at the cluster level
+spec:
+  replicas: ${BROKER_REPLICAS}
+  selector:
+    matchLabels:
+      app: broker
+  template:
+    metadata:
+      labels:
+        app: broker
+    spec:
+      serviceAccountName: ${BROKER_KSA_NAME}
+      containers:
+        - name: broker
+          image: ${REGION}-docker.pkg.dev/${GOOGLE_CLOUD_PROJECT}/${REPOSITORY}/broker:${IMAGE_TAG}
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 3
+            timeoutSeconds: 1
+            failureThreshold: 2
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 1
+          env:
+            - name: STACK_NAME
+              value: ${REGION}
+            - name: BUNSHIN_STORE
+              value: firestore
+            - name: BUNSHIN_STACKS
+              value: ${BUNSHIN_STACKS}
+            - name: GOOGLE_CLOUD_PROJECT
+              value: ${GOOGLE_CLOUD_PROJECT}
+            - name: FIRESTORE_DATABASE
+              value: ${FIRESTORE_DATABASE}
+            - name: RUNNER_API_PORT
+              value: "3000"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 250m
+              memory: 512Mi

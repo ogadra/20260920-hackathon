@@ -1,0 +1,182 @@
+services:
+  front:
+    platform: ${IMAGE_PLATFORM}
+    build:
+      context: .
+      dockerfile: front/Dockerfile
+    ports:
+      - "${FRONT_PORT}:5173"
+    env_file:
+      - front/.env.compose.example
+    volumes:
+      # node_modulesは匿名volumeに退避する。
+      # host側の異なるarch向けtreeでbind mountされて上書きされないため。
+      - ./front:/app
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD", "/bin/bash", "-c", "echo > /dev/tcp/localhost/5173"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      - nginx
+
+  nginx:
+    platform: ${IMAGE_PLATFORM}
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    ports:
+      - "${NGINX_PORT}:8080"
+    volumes:
+      - forward-target-certs:/etc/ssl/certs:ro
+    env_file:
+      - nginx/.env.example
+    environment:
+      INTERNAL_DOMAIN: ${INTERNAL_DOMAIN}
+    depends_on:
+      forward-cert:
+        condition: service_completed_successfully
+
+  broker:
+    platform: ${IMAGE_PLATFORM}
+    build:
+      context: .
+      dockerfile: broker/Dockerfile
+    ports:
+      - "${BROKER_PORT}:8080"
+    env_file:
+      - broker/.env.dynamodb.example
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    depends_on:
+      dynamodb-init:
+        condition: service_completed_successfully
+
+  # broker-test-{dynamodb,firestore}: unit test も含めて全走行させ、対象外 backend の
+  # integration test は env_file 側で endpoint が unset のため t.Skip する。
+  broker-test-dynamodb:
+    platform: ${IMAGE_PLATFORM}
+    build:
+      context: .
+      dockerfile: broker/Dockerfile
+      target: test-integration
+    env_file:
+      - broker/.env.dynamodb.example
+    depends_on:
+      dynamodb-init:
+        condition: service_completed_successfully
+    profiles:
+      - test-dynamodb
+
+  broker-test-firestore:
+    platform: ${IMAGE_PLATFORM}
+    build:
+      context: .
+      dockerfile: broker/Dockerfile
+      target: test-integration
+    env_file:
+      - broker/.env.firestore.example
+    depends_on:
+      firestore-emulator:
+        condition: service_healthy
+    profiles:
+      - test-firestore
+
+  runner-1:
+    image: bunshin-runner
+    build:
+      context: .
+      dockerfile: runner/Dockerfile
+    env_file:
+      - runner/.env.example
+
+  runner-2:
+    image: bunshin-runner
+    env_file:
+      - runner/.env.example
+    profiles:
+      - integration
+
+  integration-test:
+    image: bunshin-integration
+    env_file:
+      - integration/.env.integration-test.example
+    depends_on:
+      nginx:
+        condition: service_started
+      broker:
+        condition: service_healthy
+      runner-1:
+        condition: service_started
+      runner-2:
+        condition: service_started
+      forward-target:
+        condition: service_started
+    profiles:
+      - integration
+
+  forward-cert:
+    image: bunshin-integration
+    build:
+      context: .
+      dockerfile: integration/Dockerfile
+    command: ["go", "run", "./cmd/gen-forward-cert"]
+    volumes:
+      - forward-target-certs:/app/testdata
+    user: root
+
+  forward-target:
+    image: bunshin-integration
+    command: ["go", "run", "./cmd/forward-target"]
+    volumes:
+      - forward-target-certs:/app/testdata:ro
+    env_file:
+      - integration/.env.forward-target.example
+    depends_on:
+      forward-cert:
+        condition: service_completed_successfully
+    user: root
+    networks:
+      default:
+        aliases:
+          - ap-northeast-3.localhost
+    profiles:
+      - integration
+
+  dynamodb-init:
+    image: amazon/aws-cli:2.34.33@sha256:6170110532c8a7a0988a75e54ae2856a28cee5fb7fcb8b5916e36d4cf2001baa
+    entrypoint: ["sh", "/init/create-table.sh"]
+    volumes:
+      - ./init/create-table.sh:/init/create-table.sh:ro
+    env_file:
+      - broker/.env.dynamodb.example
+    depends_on:
+      dynamodb-local:
+        condition: service_healthy
+
+  dynamodb-local:
+    image: amazon/dynamodb-local:3.3.0@sha256:d89f8fcc6b1a39cb35976c248ed42a28c66ae00dc043099210f5571e42648ab4
+    healthcheck:
+      test: ["CMD", "/bin/bash", "-c", "echo > /dev/tcp/localhost/8000"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+
+  firestore-emulator:
+    image: mtlynch/firestore-emulator:20210410@sha256:327f3c8cdc7d3a474e24ba183c14113e1d6883b30d0dee40da0708e532f5c3c3
+    env_file:
+      - broker/.env.firestore-emulator.example
+    healthcheck:
+      test: ["CMD", "/bin/bash", "-c", "echo > /dev/tcp/localhost/8080"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - test-firestore
+
+volumes:
+  forward-target-certs:

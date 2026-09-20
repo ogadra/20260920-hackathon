@@ -1,0 +1,49 @@
+{
+  "family": "bunshin-runner",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "{{ tfstatef `module.apne3.aws_iam_role.ecs_task_execution[%q].arn` `runner` }}",
+  "taskRoleArn": "{{ tfstatef `module.apne3.aws_iam_role.task[%q].arn` `runner` }}",
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "containerDefinitions": [
+    {
+      "name": "runner",
+      "image": "{{ tfstate `data.aws_caller_identity.current.account_id` }}.dkr.ecr.ap-northeast-3.amazonaws.com/bunshin/runner:{{ must_env `IMAGE_TAG` }}",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        },
+        {
+          "containerPort": 5000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "AWS_REGION", "value": "ap-northeast-3" },
+        { "name": "STACK_NAME", "value": "ap-northeast-3" },
+        { "name": "RUNNER_API_PORT", "value": "3000" },
+        { "name": "BROKER_URL", "value": "http://broker.internal:8080" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "{{ tfstatef `module.apne3.aws_cloudwatch_log_group.ecs[%q].name` `runner` }}",
+          "awslogs-region": "ap-northeast-3",
+          "awslogs-stream-prefix": "runner"
+        }
+      }
+    }
+  ],
+  "tags": [
+    { "key": "Project", "value": "Bunshin" },
+    { "key": "ManagedBy", "value": "ecspresso" },
+    { "key": "Service", "value": "runner" }
+  ]
+}

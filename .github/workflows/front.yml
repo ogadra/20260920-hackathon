@@ -1,0 +1,61 @@
+name: Front
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - "front/**"
+      - ".github/workflows/front.yml"
+      - ".github/actions/setup-front/**"
+
+concurrency:
+  group: front-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-front
+      - run: pnpm check
+        working-directory: front
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-front
+      - run: pnpm test
+        working-directory: front
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-front
+      - run: pnpm build
+        working-directory: front
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-front
+      - run: pnpm exec playwright install --with-deps chromium
+        working-directory: front
+      - run: pnpm test:e2e
+        working-directory: front

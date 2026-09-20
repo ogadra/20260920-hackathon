@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: runner-ingress
+  namespace: bunshin
+spec:
+  podSelector:
+    matchLabels:
+      app: runner
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: nginx
+      ports:
+        - port: 3000
+          protocol: TCP
+        - port: 5000
+          protocol: TCP
+    - from:
+        - podSelector:
+            matchLabels:
+              app: broker
+      ports:
+        - port: 3000
+          protocol: TCP

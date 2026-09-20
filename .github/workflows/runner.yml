@@ -1,0 +1,77 @@
+name: Runner
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - "runner/**"
+      - ".dockerignore"
+      - ".github/workflows/runner.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  lint-runner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26"
+      - name: gofmt check
+        run: |
+          unformatted="$(gofmt -l runner/)" || exit 1
+          test -z "$unformatted" || {
+            printf '%s\n' "$unformatted"
+            exit 1
+          }
+      - name: go vet
+        run: cd runner && go vet ./...
+
+  test-runner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run tests and enforce 100% coverage
+        run: docker build --target test -f runner/Dockerfile .
+
+  test-runner-race:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run race detector
+        run: docker build --target test-race -f runner/Dockerfile .
+
+  test-runner-perl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Perl deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmodule-refresh-perl libhtml-parser-perl
+      - name: Syntax check the app files
+        run: |
+          perl -Irunner/app -c runner/app/Bunshin/HTTP.pm
+          perl -Irunner/app -c runner/app/Bunshin/Server.pm
+          perl -Irunner/app -c runner/app/Bunshin/ContentRunner.pm
+          perl -Irunner/app -c runner/app/Bunshin/App.pm
+          perl -Irunner/app -c runner/app/server.pl
+          perl -Irunner/app -c runner/app/DaiKichijoji.pm
+          perl -Irunner/app -c runner/app/Quiz.pm
+      - name: Run Perl tests
+        run: prove -Irunner/app -v -r runner/app/t/
+
+  build-runner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build
+        run: docker build -t sandbox-server -f runner/Dockerfile .
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: sandbox-server

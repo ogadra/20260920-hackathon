@@ -1,0 +1,10 @@
+region: ap-northeast-3
+cluster: bunshin
+service: bunshin-nginx
+service_definition: ecs-service-def.json
+task_definition: ecs-task-def.json
+timeout: 15m0s
+plugins:
+  - name: tfstate
+    config:
+      path: {{ must_env `TFSTATE_PATH` }}

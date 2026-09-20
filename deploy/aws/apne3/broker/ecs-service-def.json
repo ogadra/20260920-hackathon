@@ -1,0 +1,36 @@
+{
+  "launchType": "FARGATE",
+  "desiredCount": {{ must_env `BROKER_DESIRED_COUNT` }},
+  "networkConfiguration": {
+    "awsvpcConfiguration": {
+      "subnets": [
+        "{{ tfstate `module.apne3.aws_subnet.apne3_private[0].id` }}",
+        "{{ tfstate `module.apne3.aws_subnet.apne3_private[1].id` }}",
+        "{{ tfstate `module.apne3.aws_subnet.apne3_private[2].id` }}"
+      ],
+      "securityGroups": [
+        "{{ tfstate `module.apne3.aws_security_group.broker.id` }}"
+      ],
+      "assignPublicIp": "DISABLED"
+    }
+  },
+  "serviceRegistries": [
+    {
+      "registryArn": "{{ tfstate `module.apne3.aws_service_discovery_service.broker.arn` }}"
+    }
+  ],
+  "deploymentConfiguration": {
+    "deploymentCircuitBreaker": {
+      "enable": true,
+      "rollback": true
+    },
+    "maximumPercent": 200,
+    "minimumHealthyPercent": 100
+  },
+  "propagateTags": "SERVICE",
+  "tags": [
+    { "key": "Project", "value": "Bunshin" },
+    { "key": "ManagedBy", "value": "ecspresso" },
+    { "key": "Service", "value": "broker" }
+  ]
+}

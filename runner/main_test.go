@@ -1,0 +1,742 @@
+package main
+
+import (
+	"context"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"sync/atomic"
+	"syscall"
+	"testing"
+	"time"
+)
+
+func TestMainSuccess(t *testing.T) {
+	t.Setenv("RUNNER_API_PORT", "3000")
+	t.Setenv("STACK_NAME", "local")
+	restoreSupervise := stubAppSupervisor(t)
+	defer restoreSupervise()
+
+	registered := make(chan registerRequest, 1)
+	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/internal/runners/register":
+			var body registerRequest
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode register body: %v", err)
+			}
+			select {
+			case registered <- body:
+			default:
+			}
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/internal/runners/"):
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected broker request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer broker.Close()
+	t.Setenv("BROKER_URL", broker.URL)
+
+	orig := fatalf
+	defer func() { fatalf = orig }()
+
+	fatalf = func(format string, args ...any) {
+		t.Fatalf("unexpected fatalf: "+format, args...)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		main()
+	}()
+
+	var body registerRequest
+	select {
+	case body = <-registered:
+	case <-time.After(5 * time.Second):
+		proc, _ := os.FindProcess(os.Getpid())
+		proc.Signal(syscall.SIGTERM)
+		t.Fatal("register request not received within 5 seconds")
+	}
+
+	// Wait for the HTTP server to accept connections before signaling. Sending
+	// SIGTERM before register.go finishes reading its 201 response can cancel
+	// regCtx mid-response and surface as "context canceled" instead of a clean
+	// shutdown, which flakes under -race.
+	waitForServer(t, "127.0.0.1:3000")
+
+	proc, _ := os.FindProcess(os.Getpid())
+	proc.Signal(syscall.SIGTERM)
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("main did not return within 10 seconds")
+	}
+
+	raw, err := hex.DecodeString(body.RunnerID)
+	if err != nil || len(raw) != 16 {
+		t.Errorf("runnerId = %q, want 32-char hex (16 bytes)", body.RunnerID)
+	}
+	if body.PrivateHost == "" || strings.Contains(body.PrivateHost, ":") {
+		t.Errorf("privateHost = %q, want non-empty hostname without port", body.PrivateHost)
+	}
+}
+
+// TestMainError verifies that main calls fatalf when start returns an error,
+// such as when the configured port is already in use.
+func TestMainError(t *testing.T) {
+	t.Setenv("RUNNER_API_PORT", "3000")
+
+	// Occupy :3000 to make start fail.
+	ln, err := net.Listen("tcp", ":3000")
+	if err != nil {
+		t.Skipf("cannot bind :3000 for test: %v", err)
+	}
+	defer ln.Close()
+
+	orig := fatalf
+	defer func() { fatalf = orig }()
+
+	var called bool
+	fatalf = func(format string, args ...any) {
+		called = true
+		// Log but don't exit.
+		log.Printf("captured fatalf: "+format, args...)
+	}
+
+	main()
+
+	if !called {
+		t.Fatal("fatalf should have been called when start fails")
+	}
+}
+
+// TestMainMissingPort verifies that main calls fatalf when RUNNER_API_PORT is not set.
+func TestMainMissingPort(t *testing.T) {
+	t.Setenv("RUNNER_API_PORT", "")
+
+	orig := fatalf
+	defer func() { fatalf = orig }()
+
+	var called bool
+	var msg string
+	fatalf = func(format string, args ...any) {
+		called = true
+		msg = fmt.Sprintf(format, args...)
+	}
+
+	main()
+
+	if !called {
+		t.Fatal("fatalf should have been called when RUNNER_API_PORT is missing")
+	}
+	if !strings.Contains(msg, "RUNNER_API_PORT") {
+		t.Fatalf("fatalf message should mention RUNNER_API_PORT, got: %s", msg)
+	}
+}
+
+// TestRunGracefulShutdown verifies that run starts the server and shuts down
+// gracefully when a signal is sent on the injected channel.
+func TestRunGracefulShutdown(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen error: %v", err)
+	}
+	addr := ln.Addr().String()
+
+	sigCh := make(chan os.Signal, 1)
+	cfg := serverConfig{
+		sm:              NewShellManager(),
+		shutdownTimeout: 10 * time.Second,
+		superviseFn:     func(ctx context.Context) { <-ctx.Done() },
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- run(ln, sigCh, cfg)
+	}()
+
+	// Wait for the server to start accepting connections.
+	waitForServer(t, addr)
+
+	sigCh <- os.Interrupt
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("run did not return within 10 seconds")
+	}
+}
+
+// TestRunServeError verifies that run returns an error when the listener is
+// closed before serving, causing Serve to fail immediately.
+func TestRunServeError(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen error: %v", err)
+	}
+	ln.Close()
+
+	sigCh := make(chan os.Signal, 1)
+	cfg := serverConfig{
+		sm:              NewShellManager(),
+		shutdownTimeout: 10 * time.Second,
+		superviseFn:     func(ctx context.Context) { <-ctx.Done() },
+	}
+
+	err = run(ln, sigCh, cfg)
+	if err == nil {
+		t.Fatal("run should return error when listener is closed")
+	}
+}
+
+// TestRunCloseAllError verifies that run returns the CloseAll error
+// when a shell was manually closed before shutdown.
+func TestRunCloseAllError(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen error: %v", err)
+	}
+	addr := ln.Addr().String()
+
+	sm := NewShellManager()
+	cfg := serverConfig{
+		sm:              sm,
+		shutdownTimeout: 10 * time.Second,
+		superviseFn:     func(ctx context.Context) { <-ctx.Done() },
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- run(ln, sigCh, cfg)
+	}()
+
+	waitForServer(t, addr)
+
+	// Create a shell and close it manually so CloseAll will fail.
+	id, _, err := sm.Create()
+	if err != nil {
+		t.Fatalf("Create error: %v", err)
+	}
+	shell, _ := sm.Get(id)
+	shell.Close()
+
+	sigCh <- os.Interrupt
+
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("run should return error when CloseAll fails")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("run did not return within 10 seconds")
+	}
+}
+
+// TestRunDeregisterOnShutdown verifies that run calls deregisterFn during
+// graceful shutdown when brokerURL and runnerID are set in serverConfig.
+func TestRunDeregisterOnShutdown(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen error: %v", err)
+	}
+	addr := ln.Addr().String()
+
+	orig := deregisterFn
+	defer func() { deregisterFn = orig }()
+
+	var called bool
+	var gotRunnerID string
+	deregisterFn = func(ctx context.Context, deps deregisterDeps) error {
+		called = true
+		gotRunnerID = deps.runnerID
+		return nil
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	cfg := serverConfig{
+		sm:              NewShellManager(),
+		shutdownTimeout: 10 * time.Second,
+		brokerURL:       "http://broker:8080",
+		runnerID:        "test-runner",
+		superviseFn:     func(ctx context.Context) { <-ctx.Done() },
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- run(ln, sigCh, cfg)
+	}()
+
+	waitForServer(t, addr)
+	sigCh <- os.Interrupt
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("run did not return within 10 seconds")
+	}
+
+	if !called {
+		t.Fatal("deregisterFn should have been called on shutdown")
+	}
+	if gotRunnerID != "test-runner" {
+		t.Errorf("runnerID = %q, want %q", gotRunnerID, "test-runner")
+	}
+}
+
+// TestRunDeregisterFailureNonFatal verifies that run completes gracefully
+// even when deregisterFn returns an error.
+func TestRunDeregisterFailureNonFatal(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen error: %v", err)
+	}
+	addr := ln.Addr().String()
+
+	orig := deregisterFn
+	defer func() { deregisterFn = orig }()
+	deregisterFn = func(ctx context.Context, deps deregisterDeps) error {
+		return errors.New("deregister failed")
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	cfg := serverConfig{
+		sm:              NewShellManager(),
+		shutdownTimeout: 10 * time.Second,
+		brokerURL:       "http://broker:8080",
+		runnerID:        "test-runner",
+		superviseFn:     func(ctx context.Context) { <-ctx.Done() },
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- run(ln, sigCh, cfg)
+	}()
+
+	waitForServer(t, addr)
+	sigCh <- os.Interrupt
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("run should succeed even when deregister fails, got: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("run did not return within 10 seconds")
+	}
+}
+
+// TestIntegrationCreateExecuteDelete verifies the full lifecycle of creating a shell,
+// executing a command, and deleting the shell through the HTTP API using httptest.
+func TestIntegrationCreateExecuteDelete(t *testing.T) {
+	sm := NewShellManager()
+	defer sm.CloseAll()
+
+	ts := httptest.NewServer(newHandler(sm))
+	defer ts.Close()
+
+	// Create shell.
+	resp, err := http.Post(ts.URL+"/api/shell", "application/json", nil)
+	if err != nil {
+		t.Fatalf("POST /api/shell error: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("POST /api/shell status = %d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+
+	var shellID string
+	for _, c := range resp.Cookies() {
+		if c.Name == "shell_id" {
+			shellID = c.Value
+		}
+	}
+	if shellID == "" {
+		t.Fatal("shell_id cookie not found in response")
+	}
+
+	// Execute whitelisted command.
+	body := strings.NewReader(`{"command":"pwd"}`)
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/execute", body)
+	req.AddCookie(&http.Cookie{Name: "shell_id", Value: shellID})
+	setClientAddressHeader(req)
+	resp2, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /api/execute error: %v", err)
+	}
+	defer resp2.Body.Close()
+
+	if resp2.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp2.StatusCode, http.StatusOK)
+	}
+
+	// Execute non-whitelisted command.
+	body2 := strings.NewReader(`{"command":"curl -s http://localhost"}`)
+	req2, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/execute", body2)
+	req2.AddCookie(&http.Cookie{Name: "shell_id", Value: shellID})
+	setClientAddressHeader(req2)
+	resp4, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatalf("POST /api/execute validated error: %v", err)
+	}
+	defer resp4.Body.Close()
+
+	if resp4.StatusCode != http.StatusOK {
+		t.Fatalf("validated status = %d, want %d", resp4.StatusCode, http.StatusOK)
+	}
+
+	// Delete shell.
+	req3, _ := http.NewRequest(http.MethodDelete, ts.URL+"/api/shell", nil)
+	req3.AddCookie(&http.Cookie{Name: "shell_id", Value: shellID})
+	resp3, err := http.DefaultClient.Do(req3)
+	if err != nil {
+		t.Fatalf("DELETE /api/shell error: %v", err)
+	}
+	defer resp3.Body.Close()
+
+	if resp3.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", resp3.StatusCode, http.StatusNoContent)
+	}
+}
+
+// TestRunShutdownTimeout verifies that run returns an error when the shutdown
+// context times out due to an in-flight connection that does not complete in time.
+func TestRunShutdownTimeout(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen error: %v", err)
+	}
+	addr := ln.Addr().String()
+
+	// slowHandler blocks until the channel is closed, keeping the HTTP request in-flight.
+	reqStarted := make(chan struct{})
+	blockCh := make(chan struct{})
+	defer close(blockCh)
+	slow := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(reqStarted)
+		<-blockCh
+	})
+
+	sm := NewShellManager()
+	cfg := serverConfig{
+		sm:              sm,
+		shutdownTimeout: 1 * time.Nanosecond,
+		handler:         slow,
+		superviseFn:     func(ctx context.Context) { <-ctx.Done() },
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- run(ln, sigCh, cfg)
+	}()
+
+	waitForServer(t, addr)
+
+	// Start an HTTP request that will block on the server side.
+	go http.Get("http://" + addr + "/slow") //nolint:errcheck
+
+	// Wait until the handler is actually processing the request.
+	select {
+	case <-reqStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("slow handler did not start within 2 seconds")
+	}
+
+	sigCh <- os.Interrupt
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("run error = %v, want context.DeadlineExceeded", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("run did not return within 10 seconds")
+	}
+}
+
+// TestStartAndShutdown verifies that start binds to the given address and
+// shuts down when SIGTERM is delivered to the process.
+// registerFn is replaced with a no-op to avoid race conditions caused by
+// leftover SIGTERM signals from other tests canceling the registration context.
+func TestStartAndShutdown(t *testing.T) {
+	t.Setenv("BROKER_URL", "http://dummy:8080")
+	t.Setenv("STACK_NAME", "local")
+	restoreSupervise := stubAppSupervisor(t)
+	defer restoreSupervise()
+
+	origReg := registerFn
+	defer func() { registerFn = origReg }()
+	registerFn = func(ctx context.Context, deps registerDeps) error {
+		return nil
+	}
+
+	// Reserve a free port, then release it so start can bind to it.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen error: %v", err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- start(addr)
+	}()
+
+	// Poll until the server is accepting connections instead of using a fixed sleep.
+	waitForServer(t, addr)
+
+	proc, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatalf("FindProcess error: %v", err)
+	}
+	if err := proc.Signal(syscall.SIGTERM); err != nil {
+		t.Fatalf("Signal error: %v", err)
+	}
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("start returned error: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("start did not return within 10 seconds")
+	}
+}
+
+// TestStartListenError verifies that start returns an error when the address
+// is already in use.
+func TestStartListenError(t *testing.T) {
+	// Bind a port first to cause a conflict.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen error: %v", err)
+	}
+	defer ln.Close()
+
+	err = start(ln.Addr().String())
+	if err == nil {
+		t.Fatal("start should return error when address is already in use")
+	}
+}
+
+// TestStartIdentityError verifies that start returns an error and closes the
+// listener when identity resolution fails.
+func TestStartIdentityError(t *testing.T) {
+	orig := resolveIdentityFn
+	defer func() { resolveIdentityFn = orig }()
+
+	resolveIdentityFn = func(ctx context.Context, deps identityDeps) (Identity, error) {
+		return Identity{}, errors.New("identity failure")
+	}
+
+	err := start("127.0.0.1:0")
+	if err == nil {
+		t.Fatal("start should return error when identity resolution fails")
+	}
+	if !strings.Contains(err.Error(), "identity failure") {
+		t.Fatalf("error should mention identity failure, got: %v", err)
+	}
+}
+
+// TestStartMissingBrokerURL verifies that start returns an error when
+// BROKER_URL is not set.
+func TestStartMissingBrokerURL(t *testing.T) {
+	t.Setenv("BROKER_URL", "")
+	t.Setenv("STACK_NAME", "local")
+
+	err := start("127.0.0.1:0")
+	if err == nil {
+		t.Fatal("start should return error when BROKER_URL is missing")
+	}
+	if !strings.Contains(err.Error(), "BROKER_URL") {
+		t.Fatalf("error should mention BROKER_URL, got: %v", err)
+	}
+}
+
+// TestStartRegisterError verifies that start returns an error when
+// broker registration fails.
+func TestStartRegisterError(t *testing.T) {
+	t.Setenv("BROKER_URL", "http://broker:8080")
+	t.Setenv("STACK_NAME", "local")
+
+	orig := registerFn
+	defer func() { registerFn = orig }()
+
+	registerFn = func(ctx context.Context, deps registerDeps) error {
+		return errors.New("register failed")
+	}
+
+	err := start("127.0.0.1:0")
+	if err == nil {
+		t.Fatal("start should return error when registration fails")
+	}
+	if !strings.Contains(err.Error(), "register failed") {
+		t.Fatalf("error should mention register failed, got: %v", err)
+	}
+}
+
+// TestStartRegisterCanceledBySignal verifies that start cancels registration
+// when a termination signal is received during the registration phase.
+func TestStartRegisterCanceledBySignal(t *testing.T) {
+	t.Setenv("BROKER_URL", "http://broker:8080")
+	t.Setenv("STACK_NAME", "local")
+
+	orig := registerFn
+	defer func() { registerFn = orig }()
+
+	registerFn = func(ctx context.Context, deps registerDeps) error {
+		proc, _ := os.FindProcess(os.Getpid())
+		proc.Signal(syscall.SIGTERM)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	err := start("127.0.0.1:0")
+	if err == nil {
+		t.Fatal("start should return error when registration is canceled by signal")
+	}
+}
+
+// TestStartRegisterReceivesBrokerURL verifies that the broker URL from
+// the environment is passed to the register function.
+func TestStartRegisterReceivesBrokerURL(t *testing.T) {
+	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer broker.Close()
+	t.Setenv("BROKER_URL", broker.URL)
+	t.Setenv("STACK_NAME", "local")
+	restoreSupervise := stubAppSupervisor(t)
+	defer restoreSupervise()
+
+	orig := registerFn
+	defer func() { registerFn = orig }()
+
+	var gotBrokerURL string
+	registerFn = func(ctx context.Context, deps registerDeps) error {
+		gotBrokerURL = deps.brokerURL
+		return nil
+	}
+
+	// start will call run which blocks, so send SIGTERM after a short delay.
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		proc, _ := os.FindProcess(os.Getpid())
+		proc.Signal(syscall.SIGTERM)
+	}()
+
+	start("127.0.0.1:0")
+
+	if gotBrokerURL != broker.URL {
+		t.Errorf("brokerURL = %q, want %q", gotBrokerURL, broker.URL)
+	}
+}
+
+// waitForServer polls the given address with a TCP dial until it accepts a connection or times out.
+// It uses a raw TCP connection instead of an HTTP request to avoid side effects such as creating shells.
+func waitForServer(t *testing.T, addr string) {
+	t.Helper()
+	for i := 0; i < 50; i++ {
+		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("server did not start within 5 seconds")
+}
+
+// stubAppSupervisor keeps start()/main() tests from spawning a real perl-app
+// child; the returned func restores the original.
+func stubAppSupervisor(t *testing.T) func() {
+	t.Helper()
+	orig := runAppSupervisorFn
+	runAppSupervisorFn = func(ctx context.Context) { <-ctx.Done() }
+	return func() { runAppSupervisorFn = orig }
+}
+
+func TestRunSuperviseFn(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen error: %v", err)
+	}
+	addr := ln.Addr().String()
+
+	var called atomic.Bool
+	var returned atomic.Bool
+	cfg := serverConfig{
+		sm:              NewShellManager(),
+		shutdownTimeout: 5 * time.Second,
+		superviseFn: func(ctx context.Context) {
+			called.Store(true)
+			<-ctx.Done()
+			returned.Store(true)
+		},
+	}
+	sigCh := make(chan os.Signal, 1)
+	errCh := make(chan error, 1)
+	go func() { errCh <- run(ln, sigCh, cfg) }()
+
+	waitForServer(t, addr)
+	sigCh <- os.Interrupt
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("run returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("run did not return within 5 seconds")
+	}
+	if !called.Load() {
+		t.Fatal("superviseFn should have been called")
+	}
+	if !returned.Load() {
+		t.Fatal("superviseFn should have returned after ctx cancel")
+	}
+}
+
+func TestRunSuperviseFnCanceledOnServeErr(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen error: %v", err)
+	}
+	ln.Close()
+
+	var returned atomic.Bool
+	cfg := serverConfig{
+		sm:              NewShellManager(),
+		shutdownTimeout: 5 * time.Second,
+		superviseFn: func(ctx context.Context) {
+			<-ctx.Done()
+			returned.Store(true)
+		},
+	}
+	sigCh := make(chan os.Signal, 1)
+	if err := run(ln, sigCh, cfg); err == nil {
+		t.Fatal("expected error from run")
+	}
+	if !returned.Load() {
+		t.Fatal("superviseFn should have been canceled on serve error")
+	}
+}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>bunshin</title>
+  </head>
+  <body>
+    <button
+      id="stack-info-button"
+      type="button"
+      class="stack-info-button"
+      aria-haspopup="dialog"
+      aria-controls="stack-info-dialog"
+      disabled
+    ></button>
+    <dialog id="stack-info-dialog" class="stack-info-dialog"></dialog>
+    <main id="transcript" class="transcript"></main>
+    <div id="status" class="status" role="status"></div>
+    <div class="composer">
+      <div id="presets" class="presets"></div>
+      <form id="input-bar" class="input-bar">
+        <input
+          type="text"
+          id="command"
+          placeholder="Enter command..."
+          aria-label="Command"
+          disabled
+        />
+        <button type="submit" disabled>Run</button>
+      </form>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

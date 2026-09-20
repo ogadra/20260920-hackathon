@@ -10,5 +10,4 @@ locals {
     ManagedBy = "terraform"
   }
 
-  api_ingress_origin_domain_name = "api-ingress.${var.domain_name}"
 }

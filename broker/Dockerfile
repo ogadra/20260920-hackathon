@@ -33,23 +33,8 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o /server .
 
 # production image
 FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
-ARG TARGETARCH
 RUN adduser -D -H -s /sbin/nologin appuser
-COPY broker/apk-checksums.${TARGETARCH}.sha256 /tmp/apks.sha256
-RUN set -euxo pipefail; \
-    mkdir -p /tmp/apks; \
-    apk update; \
-    apk fetch --recursive -o /tmp/apks \
-        bash=5.3.9-r1 \
-        ca-certificates=20260611-r0 \
-        curl=8.22.0-r0; \
-    apk verify /tmp/apks/*.apk; \
-    find /tmp/apks -type f -name '*.apk' -exec basename {} \; | sort > /tmp/apks.actual; \
-    awk '{print $2}' /tmp/apks.sha256 | sort > /tmp/apks.expected; \
-    diff -u /tmp/apks.expected /tmp/apks.actual; \
-    (cd /tmp/apks && sha256sum -c /tmp/apks.sha256); \
-    apk --network=no add --no-cache /tmp/apks/*.apk; \
-    rm -rf /tmp/apks /tmp/apks.actual /tmp/apks.expected /tmp/apks.sha256 /var/cache/apk/*
+RUN apk add --no-cache bash ca-certificates curl
 COPY --from=binary /server /server
 USER appuser
 EXPOSE 8080

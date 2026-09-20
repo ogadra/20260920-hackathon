@@ -7,19 +7,15 @@ _validate-env env:
 _validate-vendor vendor:
     @if [ "{{vendor}}" != "aws" ] && [ "{{vendor}}" != "archive" ]; then echo "Error: vendor must be 'aws' or 'archive', got '{{vendor}}'"; exit 1; fi
 
-_validate-tf-backend-bucket:
-    @if [ -z "${TF_BACKEND_BUCKET:-}" ]; then echo "Error: TF_BACKEND_BUCKET must be set (see .env.example)"; exit 1; fi
-
 _validate-loadtest-scenario scenario:
     @if [ "{{scenario}}" != "session_uniqueness" ] && [ "{{scenario}}" != "concurrent_execute" ]; then echo "Error: scenario must be 'session_uniqueness' or 'concurrent_execute', got '{{scenario}}'"; exit 1; fi
 
 _validate-loadtest-domain:
     @if [ -z "${LOADTEST_DOMAIN:-}" ]; then echo "Error: LOADTEST_DOMAIN must be set (see .env.example)"; exit 1; fi
 
-# Initialize terraform with environment-specific S3 backend config
-# Requires TF_BACKEND_BUCKET to be set (e.g. via direnv / .env)
-init vendor env: (_validate-vendor vendor) (_validate-env env) _validate-tf-backend-bucket
-    terraform -chdir=terraform/{{vendor}} init -reconfigure -backend-config="bucket=${TF_BACKEND_BUCKET}" -backend-config="key=bunshin/{{vendor}}/{{env}}.tfstate"
+# Initialize terraform with environment-specific local state
+init vendor env: (_validate-vendor vendor) (_validate-env env)
+    terraform -chdir=terraform/{{vendor}} init -reconfigure -backend-config="path=states/{{env}}.tfstate"
 
 # Plan changes for the specified environment
 plan vendor env: (_validate-vendor vendor) (_validate-env env)

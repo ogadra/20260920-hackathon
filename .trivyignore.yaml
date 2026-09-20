@@ -5,3 +5,8 @@ misconfigurations:
     paths:
       - runner/Dockerfile
     statement: runner executes user commands and requires root
+  - id: AWS-0098
+    paths:
+      - terraform/aws/apne1/secrets.tf
+      - terraform/aws/apne3/secrets.tf
+    statement: aws managed encryption is sufficient for the jev api key

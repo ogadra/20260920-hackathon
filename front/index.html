@@ -15,10 +15,7 @@
       disabled
     ></button>
     <dialog id="stack-info-dialog" class="stack-info-dialog"></dialog>
-    <main id="transcript" class="transcript"></main>
-    <div id="status" class="status" role="status"></div>
     <div class="composer">
-      <div id="presets" class="presets"></div>
       <form id="input-bar" class="input-bar">
         <input
           type="text"
@@ -29,7 +26,10 @@
         />
         <button type="submit" disabled>Run</button>
       </form>
+      <div id="presets" class="presets"></div>
     </div>
+    <div id="status" class="status" role="status"></div>
+    <main id="transcript" class="transcript"></main>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

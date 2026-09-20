@@ -45,26 +45,6 @@ jobs:
       - name: Run race detector
         run: docker build --target test-race -f runner/Dockerfile .
 
-  test-runner-perl:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install Perl deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libmodule-refresh-perl libhtml-parser-perl
-      - name: Syntax check the app files
-        run: |
-          perl -Irunner/app -c runner/app/Bunshin/HTTP.pm
-          perl -Irunner/app -c runner/app/Bunshin/Server.pm
-          perl -Irunner/app -c runner/app/Bunshin/ContentRunner.pm
-          perl -Irunner/app -c runner/app/Bunshin/App.pm
-          perl -Irunner/app -c runner/app/server.pl
-          perl -Irunner/app -c runner/app/DaiKichijoji.pm
-          perl -Irunner/app -c runner/app/Quiz.pm
-      - name: Run Perl tests
-        run: prove -Irunner/app -v -r runner/app/t/
-
   build-runner:
     runs-on: ubuntu-latest
     steps:

@@ -92,10 +92,6 @@ resource "aws_security_group_rule" "ecs_egress_s3" {
   description       = "HTTPS to S3 VPC endpoint"
 }
 
-data "aws_ec2_managed_prefix_list" "cloudfront_origin_facing" {
-  name = "com.amazonaws.global.cloudfront.origin-facing"
-}
-
 resource "aws_security_group" "api_ingress_alb" {
   name_prefix = "bunshin-api-ingress-alb-"
   description = "Security group for API ingress ALB"
@@ -124,32 +120,6 @@ resource "aws_security_group_rule" "api_ingress_alb_ingress_https" {
   ipv6_cidr_blocks  = ["::/0"]
   security_group_id = aws_security_group.api_ingress_alb.id
   description       = "HTTPS from clients through Global Accelerator"
-}
-
-resource "aws_security_group" "api_ingress_alb_port_forward" {
-  name_prefix = "bunshin-api-ingress-alb-pf-"
-  description = "Security group for API ingress ALB port-forward listener"
-  vpc_id      = aws_vpc.apne1.id
-
-  tags = merge(local.common_tags, {
-    Name    = "bunshin-apne1-api-ingress-alb-pf"
-    Service = "api-ingress-alb"
-  })
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
-resource "aws_security_group_rule" "api_ingress_alb_ingress_https_port_forward" {
-  # checkov:skip=CKV_BUNSHIN_1:Resource does not support tags
-  type              = "ingress"
-  from_port         = local.api_ingress_port_forward_port
-  to_port           = local.api_ingress_port_forward_port
-  protocol          = "tcp"
-  prefix_list_ids   = [data.aws_ec2_managed_prefix_list.cloudfront_origin_facing.id]
-  security_group_id = aws_security_group.api_ingress_alb_port_forward.id
-  description       = "HTTPS from CloudFront through Global Accelerator (port-forward)"
 }
 
 resource "aws_security_group_rule" "api_ingress_alb_egress_nginx" {
@@ -227,17 +197,6 @@ resource "aws_security_group_rule" "nginx_egress_runner" {
   description              = "HTTP to runner"
 }
 
-resource "aws_security_group_rule" "nginx_egress_runner_app" {
-  # checkov:skip=CKV_BUNSHIN_1:Resource does not support tags
-  type                     = "egress"
-  from_port                = local.runner_app_port
-  to_port                  = local.runner_app_port
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.runner.id
-  security_group_id        = aws_security_group.nginx.id
-  description              = "HTTP to runner port-forward app"
-}
-
 resource "aws_security_group_rule" "nginx_ingress_api_ingress_alb" {
   # checkov:skip=CKV_BUNSHIN_1:Resource does not support tags
   type                     = "ingress"
@@ -296,17 +255,6 @@ resource "aws_security_group_rule" "runner_ingress_nginx" {
   source_security_group_id = aws_security_group.nginx.id
   security_group_id        = aws_security_group.runner.id
   description              = "HTTP from nginx"
-}
-
-resource "aws_security_group_rule" "runner_ingress_nginx_app" {
-  # checkov:skip=CKV_BUNSHIN_1:Resource does not support tags
-  type                     = "ingress"
-  from_port                = local.runner_app_port
-  to_port                  = local.runner_app_port
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.nginx.id
-  security_group_id        = aws_security_group.runner.id
-  description              = "HTTP from nginx for port-forward app"
 }
 
 resource "aws_security_group_rule" "runner_egress_broker" {

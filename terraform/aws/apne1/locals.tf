@@ -11,12 +11,6 @@ locals {
     runner = { port = 3000 }
   }
 
-  # port-forwardで外部から届けたいrunner内アプリのlisten port。
-  # 既定のrunner API (:3000) とは別のSGルールで参照する。
-  runner_app_port = 5000
-
-  api_ingress_port_forward_port = 8443
-
   ecr_repository_arns = {
     for service in keys(local.ecs_services) :
     service => "arn:aws:ecr:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:repository/bunshin/${service}"

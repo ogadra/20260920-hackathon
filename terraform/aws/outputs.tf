@@ -28,30 +28,6 @@ output "user_dns" {
         target  = aws_globalaccelerator_accelerator.api_ingress.dns_name
         zone_id = aws_globalaccelerator_accelerator.api_ingress.hosted_zone_id
       }
-      port_forward_apne1 = {
-        name    = "*.ap-northeast-1.${var.domain_name}"
-        target  = aws_cloudfront_distribution.port_forward_apne1.domain_name
-        zone_id = aws_cloudfront_distribution.port_forward_apne1.hosted_zone_id
-      }
-      port_forward_apne3 = {
-        name    = "*.ap-northeast-3.${var.domain_name}"
-        target  = aws_cloudfront_distribution.port_forward_apne3.domain_name
-        zone_id = aws_cloudfront_distribution.port_forward_apne3.hosted_zone_id
-      }
-    }
-  }
-}
-
-output "user_dns_acm_validation" {
-  description = "ACM DNS validation CNAMEs to publish in the external authoritative zone before re-applying"
-  value = {
-    port_forward_apne1 = {
-      name = one(aws_acm_certificate.cloudfront_port_forward_apne1.domain_validation_options).resource_record_name
-      data = one(aws_acm_certificate.cloudfront_port_forward_apne1.domain_validation_options).resource_record_value
-    }
-    port_forward_apne3 = {
-      name = one(aws_acm_certificate.cloudfront_port_forward_apne3.domain_validation_options).resource_record_name
-      data = one(aws_acm_certificate.cloudfront_port_forward_apne3.domain_validation_options).resource_record_value
     }
   }
 }

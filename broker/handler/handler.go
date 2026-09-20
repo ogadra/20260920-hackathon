@@ -61,7 +61,7 @@ type registerRequest struct {
 	// RunnerID は runner の一意識別子。
 	RunnerID string `json:"runnerId" binding:"required"`
 	// PrivateHost は runner の hostname (port を含まない)。
-	// 用途別 port (RUNNER_API_PORT / RUNNER_APP_PORT) は broker と nginx がそれぞれ知る。
+	// port (RUNNER_API_PORT) は broker と nginx がそれぞれ知る。
 	PrivateHost string `json:"privateHost" binding:"required"`
 }
 

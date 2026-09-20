@@ -11,14 +11,6 @@ die() {
     exit 1
 }
 
-platform_for_service() {
-    case "${1:?}" in
-        broker|nginx) echo "linux/arm64" ;;
-        runner)       echo "linux/amd64" ;;
-        *) echo "unknown service: ${1}" >&2; exit 1 ;;
-    esac
-}
-
 wait_for_replication() {
     local service="${1:?}"
     local env_name="${2:?}"
@@ -65,7 +57,6 @@ main() {
     local service="${1:?Usage: scripts/aws/deploy/service.sh <service> <env> <aws_account_id>}"
     local env_name="${2:?Usage: scripts/aws/deploy/service.sh <service> <env> <aws_account_id>}"
     local aws_account_id="${3:?Usage: scripts/aws/deploy/service.sh <service> <env> <aws_account_id>}"
-    local platform
     local image_tag
     local short_image_tag
     local registry="${aws_account_id}.dkr.ecr.${ECR_REGION}.amazonaws.com"
@@ -77,14 +68,13 @@ main() {
 
     : "${TFSTATE_PATH:?TFSTATE_PATH must be set (local tfstate for ecspresso plugin)}"
 
-    platform="$(platform_for_service "${service}")"
     image_tag="$(git -C "${ROOT_DIR}" rev-parse HEAD)"
     short_image_tag="$(git -C "${ROOT_DIR}" rev-parse --short=7 HEAD)"
 
     echo "Deploying ${service} to ${env_name}"
     echo "[${service}] building image"
     docker buildx build \
-        --platform "${platform}" \
+        --platform linux/arm64 \
         -f "${ROOT_DIR}/${service}/Dockerfile" \
         -t "${registry}/bunshin/${service}:${image_tag}" \
         -t "${registry}/bunshin/${service}:${short_image_tag}" \

@@ -1,5 +1,5 @@
 -- /resolve/sessionサブリクエスト応答 (res) から、クライアントへの振る舞いを決める純関数。
--- brokerはhost-only契約 (X-Runner-Host) を返し、nginxが用途別portを貼る。
+-- brokerはhost-only契約 (X-Runner-Host) を返し、nginxがRUNNER_API_PORTを貼る。
 local runner_host = require("runner_host")
 
 local _M = {}
@@ -14,7 +14,6 @@ local internal_domain_name = ""
 local allowed_stacks = {}
 local ordered_stacks = {}
 local api_port_number = 0
-local app_port_number = 0
 
 local function string_header(headers, name, label)
     local value = headers[name]
@@ -32,7 +31,7 @@ local function validate_port(v, name)
     return port
 end
 
-function _M.configure(stack, domain, stack_names, api_port, app_port)
+function _M.configure(stack, domain, stack_names, api_port)
     if stack == nil or stack == "" or domain == nil or domain == "" then
         error("resolve_core: STACK_NAME and INTERNAL_DOMAIN must be set")
     end
@@ -40,7 +39,6 @@ function _M.configure(stack, domain, stack_names, api_port, app_port)
         error("resolve_core: BUNSHIN_STACKS must be set")
     end
     api_port_number = validate_port(api_port, "RUNNER_API_PORT")
-    app_port_number = validate_port(app_port, "RUNNER_APP_PORT")
     local set = {}
     local list = {}
     for s in stack_names:gmatch("[^,]+") do
@@ -222,58 +220,6 @@ function _M.decide(res, stacks, domain)
         session_hex = res.header["X-Session-Hex"],
         stack_name = res.header["X-Stack-Name"],
     }
-end
-
--- port-forwardのHost `<hex32>.<stack>.<internal_domain>` を分解する。
--- suffixがinternal_domainと完全一致しなければnil。
--- stackはBUNSHIN_STACKSのallowlistで絞る。
--- server_name段階のregexを通過しても未知stackはここで落とす。
-function _M.parse_app_host(host)
-    if type(host) ~= "string" or internal_domain_name == "" then
-        return nil
-    end
-    local hex, stack, suffix = host:match("^([0-9a-f]+)%.([a-z0-9-]+)%.(.+)$")
-    if hex == nil or #hex ~= 32 then
-        return nil
-    end
-    if suffix ~= internal_domain_name then
-        return nil
-    end
-    if not allowed_stacks[stack] then
-        return nil
-    end
-    return { hex = hex, stack = stack }
-end
-
--- 所有stackへはDNSで直接着弾する前提。
--- 他stackのHostは解決せず404に落とす。
--- cross-stack forwardを許すとfallback / relay経路と混ざる。
-function _M.decide_app_arrival(host)
-    local parsed = _M.parse_app_host(host)
-    if parsed == nil then
-        return { exit = HTTP_NOT_FOUND }
-    end
-    if parsed.stack ~= own_stack_name then
-        return { exit = HTTP_NOT_FOUND }
-    end
-    return { hex = parsed.hex }
-end
-
--- 200以外はそのまま透過する。broker 404はsession不在で、decide_app_arrivalの404と同形なので推測されない。
--- 200 + 不正hostはbroker側のバグ。
--- 500 + logで観測できるようにする。
-function _M.decide_app_resolve(status, headers)
-    if status ~= HTTP_OK then
-        return { exit = status }
-    end
-    local host = headers["X-Runner-Host"]
-    if not runner_host.is_valid(host) then
-        return {
-            exit = HTTP_INTERNAL_ERROR,
-            log = "pf_resolve: invalid X-Runner-Host from broker: " .. tostring(host),
-        }
-    end
-    return { upstream = "http://" .. host .. ":" .. tostring(app_port_number) }
 end
 
 return _M

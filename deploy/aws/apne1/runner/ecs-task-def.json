@@ -7,7 +7,7 @@
   "executionRoleArn": "{{ tfstatef `module.apne1.aws_iam_role.ecs_task_execution[%q].arn` `runner` }}",
   "taskRoleArn": "{{ tfstatef `module.apne1.aws_iam_role.task[%q].arn` `runner` }}",
   "runtimePlatform": {
-    "cpuArchitecture": "X86_64",
+    "cpuArchitecture": "ARM64",
     "operatingSystemFamily": "LINUX"
   },
   "containerDefinitions": [
@@ -18,10 +18,6 @@
       "portMappings": [
         {
           "containerPort": 3000,
-          "protocol": "tcp"
-        },
-        {
-          "containerPort": 5000,
           "protocol": "tcp"
         }
       ],

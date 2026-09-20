@@ -62,11 +62,8 @@ resource "aws_lb" "api_ingress" {
   enable_xff_client_port = true
   load_balancer_type     = "application"
   ip_address_type        = "dualstack"
-  security_groups = [
-    aws_security_group.api_ingress_alb.id,
-    aws_security_group.api_ingress_alb_port_forward.id,
-  ]
-  subnets = aws_subnet.apne3_private[*].id
+  security_groups        = [aws_security_group.api_ingress_alb.id]
+  subnets                = aws_subnet.apne3_private[*].id
 
   tags = merge(local.common_tags, {
     Service = "api-ingress-alb"
@@ -92,23 +89,6 @@ resource "aws_lb" "internal" {
 resource "aws_lb_listener" "api_ingress_https" {
   load_balancer_arn = aws_lb.api_ingress.arn
   port              = 443
-  protocol          = "HTTPS"
-  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-  certificate_arn   = var.alb_certificate_arn
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.api_ingress_nginx.arn
-  }
-
-  tags = merge(local.common_tags, {
-    Service = "api-ingress-alb"
-  })
-}
-
-resource "aws_lb_listener" "api_ingress_https_port_forward" {
-  load_balancer_arn = aws_lb.api_ingress.arn
-  port              = local.api_ingress_port_forward_port
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
   certificate_arn   = var.alb_certificate_arn

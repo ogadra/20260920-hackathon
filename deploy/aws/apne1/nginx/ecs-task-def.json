@@ -26,7 +26,6 @@
         { "name": "INTERNAL_DOMAIN", "value": "{{ tfstate `output.domain_name` }}" },
         { "name": "BUNSHIN_STACKS", "value": "{{ must_env `BUNSHIN_STACKS` }}" },
         { "name": "RUNNER_API_PORT", "value": "3000" },
-        { "name": "RUNNER_APP_PORT", "value": "5000" },
         { "name": "NGINX_RESOLVER", "value": "169.254.169.253" },
         { "name": "BROKER_HOST", "value": "broker.internal" }
       ],

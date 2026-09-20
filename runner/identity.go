@@ -23,7 +23,7 @@ type Identity struct {
 	// RunnerID is the unique identifier for this runner.
 	RunnerID string
 	// PrivateHost is the hostname (without port) that the broker uses to reach this runner.
-	// port は broker と nginx がそれぞれ持つ用途別 port (RUNNER_API_PORT / RUNNER_APP_PORT) から貼る。
+	// port は broker と nginx がそれぞれ持つ RUNNER_API_PORT から貼る。
 	PrivateHost string
 }
 

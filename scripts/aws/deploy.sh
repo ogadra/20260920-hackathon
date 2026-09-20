@@ -32,17 +32,13 @@ login_ecr() {
         | docker login --username AWS --password-stdin "${registry}"
 }
 
-fetch_tfstate() {
+resolve_tfstate() {
     local env_name="${1:?}"
 
-    : "${TF_BACKEND_BUCKET:?TF_BACKEND_BUCKET must be set (tfstate bucket for ecspresso plugin)}"
-
-    TFSTATE_PATH="$(mktemp)"
+    TFSTATE_PATH="${ROOT_DIR}/terraform/aws/states/${env_name}.tfstate"
     export TFSTATE_PATH
-    trap 'rm -f "${TFSTATE_PATH}"' EXIT
-    aws --profile prd s3 cp \
-        "s3://${TF_BACKEND_BUCKET}/bunshin/aws/${env_name}.tfstate" \
-        "${TFSTATE_PATH}" >/dev/null
+
+    [[ -f "${TFSTATE_PATH}" ]] || die "tfstate not found at ${TFSTATE_PATH} (run 'just apply aws ${env_name}' first)"
 }
 
 main() {
@@ -71,7 +67,7 @@ main() {
     fi
 
     login_ecr "${env_name}" "${aws_account_id}"
-    fetch_tfstate "${env_name}"
+    resolve_tfstate "${env_name}"
 
     # shellcheck disable=SC1091
     source "${ROOT_DIR}/deploy/aws/stacks.env"

@@ -6,15 +6,13 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 SERVICES=(broker nginx runner)
 REGION_DIRS=(apne1 apne3)
 
-: "${TF_BACKEND_BUCKET:?TF_BACKEND_BUCKET must be set (tfstate bucket for ecspresso plugin)}"
-
-TFSTATE_PATH="$(mktemp)"
+TFSTATE_PATH="${ROOT_DIR}/terraform/aws/states/${ENV}.tfstate"
 export TFSTATE_PATH
-trap 'rm -f "${TFSTATE_PATH}"' EXIT
 
-aws --profile prd s3 cp \
-    "s3://${TF_BACKEND_BUCKET}/bunshin/aws/${ENV}.tfstate" \
-    "${TFSTATE_PATH}" >/dev/null
+if [[ ! -f "${TFSTATE_PATH}" ]]; then
+    echo "Error: tfstate not found at ${TFSTATE_PATH}" >&2
+    exit 1
+fi
 
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/deploy/aws/stacks.env"

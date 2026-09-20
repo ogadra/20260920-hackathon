@@ -108,7 +108,7 @@ resource "aws_security_group" "api_ingress_alb" {
 }
 
 # Global Acceleratorがclient IPを保持したまま転送するため、送信元はclientの実IPになる。
-# edgeのIP rangeで絞る手段が無いので、WAFとALBのTLS終端で受ける。
+# edgeのIP rangeで絞る手段が無いので、ALBのTLS終端で受ける。
 # trivy:ignore:AVD-AWS-0107 -- Global Accelerator preserves the client IP, so the source cannot be narrowed
 resource "aws_security_group_rule" "api_ingress_alb_ingress_https" {
   # checkov:skip=CKV_BUNSHIN_1:Resource does not support tags

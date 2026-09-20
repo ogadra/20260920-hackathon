@@ -59,52 +59,33 @@ var newBrokerService = func(repo store.Repository, stack string, checker healthc
 	return service.NewBrokerService(repo, stack, service.WithChecker(checker))
 }
 
-// defaultInitHandler は環境変数を解決して Handler と後片付け用の Closer を組み立てる。
-// 具体的な env 読解と client 生成は broker/config が担う。Repository が io.Closer を
-// 実装する (Firestore の gRPC connection など) 場合は shutdown 時に閉じる責務を run に渡す。
-func defaultInitHandler() (*handler.Handler, io.Closer, error) {
+// defaultInitHandler は環境変数を解決して Handler を組み立てる。
+// 具体的な env 読解と client 生成は broker/config が担う。
+func defaultInitHandler() (*handler.Handler, error) {
 	stack, err := config.NewStackFromEnv()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	runnerAPIPort, err := config.NewRunnerAPIPortFromEnv()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	repo, err := config.NewRepositoryFromEnv(context.Background())
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	checker := healthcheck.NewHTTPChecker(&http.Client{Timeout: 3 * time.Second}, runnerAPIPort)
 	svc := newBrokerService(repo, stack.Self, checker)
-	return handler.NewHandler(svc, stack.Fallbacks, stack.Self), repoCloser(repo), nil
+	return handler.NewHandler(svc, stack.Fallbacks, stack.Self), nil
 }
-
-// repoCloser は Repository が io.Closer を実装しているならそのまま返し、
-// 非対応の実装 (DynamoRepository) には noop を返す。
-func repoCloser(repo store.Repository) io.Closer {
-	if c, ok := repo.(io.Closer); ok {
-		return c
-	}
-	return noopCloser{}
-}
-
-type noopCloser struct{}
-
-func (noopCloser) Close() error { return nil }
 
 // run はサーバーの起動とグレースフルシャットダウンを行う。
-// initHandler は Handler と Repository の Close を構築する関数で、テスト時に fake を注入できる。
-func run(initHandler func() (*handler.Handler, io.Closer, error)) error {
-	h, closer, err := initHandler()
+// initHandler は Handler を構築する関数で、テスト時に fake を注入できる。
+func run(initHandler func() (*handler.Handler, error)) error {
+	h, err := initHandler()
 	if err != nil {
 		return fmt.Errorf("init handler: %w", err)
 	}
-	defer func() {
-		if err := closer.Close(); err != nil {
-			fmt.Fprintf(stdout, "close repository: %v\n", err)
-		}
-	}()
 	r := newRouter(h)
 
 	srv := &http.Server{

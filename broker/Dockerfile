@@ -5,13 +5,9 @@ COPY broker/go.mod broker/go.sum ./
 RUN go mod download
 COPY broker/ ./
 
-# broker/store/firestoreadapter は Firestore SDK 具象型を直接触るため unit test で mock 不能。
-# integration test で担保するため -coverpkg から除外する。
-
 FROM build AS test
 SHELL ["/bin/ash", "-o", "pipefail", "-c"]
-RUN COVERPKG=$(go list ./... | grep -v /firestoreadapter | tr '\n' ',' | sed 's/,$//') \
-    && CGO_ENABLED=0 go test -v -coverpkg="$COVERPKG" -coverprofile=cover.out ./... \
+RUN CGO_ENABLED=0 go test -v -coverpkg=./... -coverprofile=cover.out ./... \
     && total=$(go tool cover -func=cover.out | grep ^total: | awk '{print $NF}') \
     && echo "Total coverage: ${total}" \
     && test "${total}" = "100.0%" || { echo "FAIL: coverage ${total} is below 100.0%"; exit 1; }

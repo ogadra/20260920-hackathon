@@ -93,7 +93,7 @@ func (r *DynamoRepository) Register(ctx context.Context, runnerID, privateHost s
 
 // AcquireIdle は (start, ∞) → [∅, start] の 2 segment を acquireQueryLimit 件ずつ paginate し、
 // assignSession で precondition 競合した runner は tried に記録して次候補へ進む。
-// 全 segment を辿り切れば idle 枯渇として ErrNoIdleRunner を返す (Firestore 側と同構造)。
+// 全 segment を辿り切れば idle 枯渇として ErrNoIdleRunner を返す。
 func (r *DynamoRepository) AcquireIdle(ctx context.Context, sessionID string) (*model.Runner, error) {
 	tried := map[string]struct{}{}
 	start := r.randHexFn()

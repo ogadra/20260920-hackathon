@@ -21,16 +21,15 @@ var (
 	ErrInvalidPrivateHost = errors.New("privateHost must not be empty")
 )
 
-// AcquireIdle が 1 ページで取得する idle 候補の件数上限。dynamo / firestore 両実装で共有する。
+// AcquireIdle が 1 ページで取得する idle 候補の件数上限。
 // stale item に当たっても同ページ内の次候補で assign を試せるよう複数取る。
 const acquireQueryLimit = 5
 
 // AcquireIdle は runnerId の lex 順で 2 segment を走査するため、
 // 32 桁小文字 hex 以外を書き込むと backend の順序が崩れ取りこぼす。Register で形式を強制する。
-// dynamo / firestore 両実装で共有する。
 var runnerIDRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
-// defaultRandHexFn は AcquireIdle の走査開始位置を返す。dynamo / firestore 両実装で共有する。
+// defaultRandHexFn は AcquireIdle の走査開始位置を返す。
 // 暗号強度を要求しないので crypto/rand ではなく math/rand/v2 を使う。
 func defaultRandHexFn() string {
 	var b [16]byte

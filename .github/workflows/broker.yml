@@ -76,10 +76,8 @@ jobs:
         include:
           - pattern: amd64
             image_platform: linux/amd64
-            backend: firestore
           - pattern: arm64
             image_platform: linux/arm64
-            backend: dynamodb
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -92,8 +90,8 @@ jobs:
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
         with:
           driver: docker
-      - name: Run ${{ matrix.backend }} integration tests
-        run: docker compose --profile test-${{ matrix.backend }} run --rm broker-test-${{ matrix.backend }}
+      - name: Run dynamodb integration tests
+        run: docker compose --profile test-dynamodb run --rm broker-test-dynamodb
 
   build-broker:
     strategy:

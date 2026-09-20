@@ -99,7 +99,7 @@ func TestNewRepositoryFromEnv_MissingStore(t *testing.T) {
 	}
 }
 
-// case 違いは dynamodb / firestore に fold されない (surrounding whitespace は TrimSpace で受容)。
+// case 違いは dynamodb に fold されない (surrounding whitespace は TrimSpace で受容)。
 func TestNewRepositoryFromEnv_UnsupportedStore(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -150,91 +150,5 @@ func TestNewRepositoryFromEnv_DynamoPartialCredentials(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "AWS_ACCESS_KEY_ID") || !strings.Contains(err.Error(), "AWS_SECRET_ACCESS_KEY") {
 		t.Errorf("error = %q, want to mention both credential keys", err.Error())
-	}
-}
-
-func setFirestoreEnv(t *testing.T) {
-	t.Helper()
-	t.Setenv("BUNSHIN_STORE", "firestore")
-	t.Setenv("GOOGLE_CLOUD_PROJECT", "test-project")
-	t.Setenv("FIRESTORE_DATABASE", "test-db")
-}
-
-func saveNewFirestoreRepositoryFn(t *testing.T) {
-	t.Helper()
-	orig := NewFirestoreRepositoryFn
-	t.Cleanup(func() { NewFirestoreRepositoryFn = orig })
-}
-
-type fakeFirestoreRepo struct{ store.Repository }
-
-func TestNewRepositoryFromEnv_FirestoreInjected(t *testing.T) {
-	setFirestoreEnv(t)
-	saveNewFirestoreRepositoryFn(t)
-
-	called := false
-	NewFirestoreRepositoryFn = func(_ context.Context, projectID, databaseID string) (store.Repository, error) {
-		called = true
-		if projectID != "test-project" {
-			t.Errorf("projectID = %q, want test-project", projectID)
-		}
-		if databaseID != "test-db" {
-			t.Errorf("databaseID = %q, want test-db", databaseID)
-		}
-		return fakeFirestoreRepo{}, nil
-	}
-
-	repo, err := NewRepositoryFromEnv(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if repo == nil {
-		t.Fatal("expected non-nil Repository")
-	}
-	if !called {
-		t.Error("NewFirestoreRepositoryFn was not called")
-	}
-}
-
-func TestNewRepositoryFromEnv_FirestoreFactoryError(t *testing.T) {
-	setFirestoreEnv(t)
-	saveNewFirestoreRepositoryFn(t)
-
-	NewFirestoreRepositoryFn = func(context.Context, string, string) (store.Repository, error) {
-		return nil, errors.New("factory failed")
-	}
-
-	_, err := NewRepositoryFromEnv(context.Background())
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "factory failed") {
-		t.Errorf("error = %q, want to contain factory error", err.Error())
-	}
-}
-
-func TestNewRepositoryFromEnv_FirestoreMissingProject(t *testing.T) {
-	setFirestoreEnv(t)
-	t.Setenv("GOOGLE_CLOUD_PROJECT", "")
-
-	_, err := NewRepositoryFromEnv(context.Background())
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "GOOGLE_CLOUD_PROJECT") {
-		t.Errorf("error = %q, want to contain GOOGLE_CLOUD_PROJECT", err.Error())
-	}
-}
-
-func TestNewRepositoryFromEnv_FirestoreMissingDatabase(t *testing.T) {
-	setFirestoreEnv(t)
-	t.Setenv("FIRESTORE_DATABASE", "")
-
-	_, err := NewRepositoryFromEnv(context.Background())
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "FIRESTORE_DATABASE") {
-		t.Errorf("error = %q, want to contain FIRESTORE_DATABASE", err.Error())
 	}
 }

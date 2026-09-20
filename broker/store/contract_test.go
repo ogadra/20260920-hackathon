@@ -1,5 +1,5 @@
-// Package store_test は Repository の contract を DynamoDB Local と Firestore emulator の両方で検証する。
-// 各 test は runContract で backend ごとに subtest 展開され、対象 backend の endpoint が未設定なら skip する。
+// Package store_test は Repository の contract を DynamoDB Local に対して検証する。
+// 各 test は runContract 経由で走り、endpoint が未設定なら skip する。
 package store_test
 
 import (
@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,34 +20,15 @@ import (
 
 	"github.com/ogadra/bunshin/broker/model"
 	"github.com/ogadra/bunshin/broker/store"
-	"github.com/ogadra/bunshin/broker/store/firestoreadapter"
 )
 
-type backend struct {
-	name  string
-	setup func(t *testing.T) store.Repository
-}
-
-var contractBackends = []backend{
-	{name: "DynamoDB", setup: setupDynamo},
-	{name: "Firestore", setup: setupFirestore},
-}
-
-// runContract は fn を各 backend に対して subtest として並列実行する。
-// 対象 backend の endpoint が未設定なら該当 subtest だけ skip する (broker-test-dynamodb と
-// broker-test-firestore で片方の env だけ与える運用に対応)。
+// runContract は fn を DynamoDB Local 上の isolated table に対して並列実行する。
 func runContract(t *testing.T, fn func(t *testing.T, repo store.Repository)) {
-	for _, be := range contractBackends {
-		t.Run(be.name, func(t *testing.T) {
-			t.Parallel()
-			repo := be.setup(t)
-			fn(t, repo)
-		})
-	}
+	t.Parallel()
+	fn(t, setupDynamo(t))
 }
 
 // dynamoTableSeq は t.Parallel() 下で同一 nanosecond に time.Now() が並ぶ race を排除するプロセス内カウンタ。
-// setupFirestore の firestoreProjectSeq と対称。
 var dynamoTableSeq atomic.Uint64
 
 // setupDynamo は DynamoDB Local に isolated table を作った Repository を返す。
@@ -116,40 +96,6 @@ func setupDynamo(t *testing.T) store.Repository {
 		_, _ = client.DeleteTable(context.Background(), &dynamodb.DeleteTableInput{TableName: &tableName})
 	})
 	return store.NewDynamoRepository(client, tableName)
-}
-
-// firestoreProjectSeq は emulator 上の projectID を衝突不能にするためのプロセス内カウンタ。
-// t.Parallel() 下で同一 nanosecond に time.Now() が並ぶ race を排除する。
-var firestoreProjectSeq atomic.Uint64
-
-// setupFirestore は Firestore emulator の isolated projectID に接続した Repository を返す。
-// t.Cleanup で client を close し、複数 test の gRPC connection を残さない。
-func setupFirestore(t *testing.T) store.Repository {
-	t.Helper()
-	if os.Getenv("FIRESTORE_EMULATOR_HOST") == "" {
-		t.Skip("FIRESTORE_EMULATOR_HOST not set, skipping Firestore contract test")
-	}
-	// Firestore projectID は小文字英数 + ハイフンのみ、6-30 文字。
-	// t.Name() は大文字と '_', '/' を含むため置換 & 小文字化する。
-	// 衝突回避に unique seq を末尾に添え、余った長さで t.Name() を prefix する。
-	suffix := fmt.Sprintf("-%d", firestoreProjectSeq.Add(1))
-	const prefix = "bunshin-fs-"
-	nameBudget := 30 - len(prefix) - len(suffix)
-	safeName := strings.NewReplacer("_", "-", "/", "-").Replace(strings.ToLower(t.Name()))
-	if len(safeName) > nameBudget {
-		safeName = safeName[:nameBudget]
-	}
-	projectID := prefix + safeName + suffix
-	repo, err := firestoreadapter.NewRepository(context.Background(), projectID, "(default)")
-	if err != nil {
-		t.Fatalf("firestoreadapter.NewRepository: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := repo.Close(); err != nil {
-			t.Errorf("repo.Close: %v", err)
-		}
-	})
-	return repo
 }
 
 func TestContract_RegisterAndFindByID(t *testing.T) {

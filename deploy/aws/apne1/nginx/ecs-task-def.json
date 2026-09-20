@@ -23,7 +23,7 @@
       ],
       "environment": [
         { "name": "STACK_NAME", "value": "ap-northeast-1" },
-        { "name": "INTERNAL_DOMAIN", "value": "{{ tfstate `output.domain_name` }}" },
+        { "name": "INTERNAL_DOMAIN", "value": "{{ must_env `INTERNAL_DOMAIN` }}" },
         { "name": "BUNSHIN_STACKS", "value": "{{ must_env `BUNSHIN_STACKS` }}" },
         { "name": "RUNNER_API_PORT", "value": "3000" },
         { "name": "NGINX_RESOLVER", "value": "169.254.169.253" },

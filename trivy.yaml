@@ -1,5 +1,10 @@
 exit-code: 1
 ignorefile: .trivyignore.yaml
+# runner は素の Debian をそのまま配るので、Debian が未修正のまま抱える CVE が
+# 数千件ヒットする。パッケージを最新に保つ以上に打てる手が無いものを並べても
+# 判断材料にならないため、修正版が出ているものだけを失敗扱いにする。
+vulnerability:
+  ignore-unfixed: true
 scan:
   skip-dirs:
     - .claude

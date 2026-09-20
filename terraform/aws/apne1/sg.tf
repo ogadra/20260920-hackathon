@@ -279,3 +279,18 @@ resource "aws_security_group_rule" "runner_egress_https" {
   security_group_id = aws_security_group.runner.id
   description       = "HTTPS to internet"
 }
+
+# Debian の apt sources は deb.debian.org へ平文 HTTP で出る。
+# sources を HTTPS に書き換えるとサードパーティ repo が引けなくなるので、
+# 素の Debian のまま apt install できるよう 80 を開ける。
+# trivy:ignore:AVD-AWS-0104 -- runner requires outbound internet access
+resource "aws_security_group_rule" "runner_egress_http" {
+  # checkov:skip=CKV_BUNSHIN_1:Resource does not support tags
+  type              = "egress"
+  from_port         = 80
+  to_port           = 80
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.runner.id
+  description       = "HTTP to internet"
+}

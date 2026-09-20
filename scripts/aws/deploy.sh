@@ -37,8 +37,6 @@ resolve_tfstate() {
 
     TFSTATE_PATH="${ROOT_DIR}/terraform/aws/states/${env_name}.tfstate"
     export TFSTATE_PATH
-
-    [[ -f "${TFSTATE_PATH}" ]] || die "tfstate not found at ${TFSTATE_PATH} (run 'just apply aws ${env_name}' first)"
 }
 
 main() {

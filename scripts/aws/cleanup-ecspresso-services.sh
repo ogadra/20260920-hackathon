@@ -9,11 +9,6 @@ REGION_DIRS=(apne1 apne3)
 TFSTATE_PATH="${ROOT_DIR}/terraform/aws/states/${ENV}.tfstate"
 export TFSTATE_PATH
 
-if [[ ! -f "${TFSTATE_PATH}" ]]; then
-    echo "Error: tfstate not found at ${TFSTATE_PATH}" >&2
-    exit 1
-fi
-
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/deploy/aws/stacks.env"
 

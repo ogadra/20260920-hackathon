@@ -1,10 +1,8 @@
 module "apne1" {
   source = "./apne1"
 
-  alb_certificate_arn                     = data.aws_acm_certificate.apne1_alb.arn
-  domain_name                             = var.domain_name
-  google_cloud_dns_forwarder_source_range = local.google_cloud_dns_forwarder_source_range
-  google_cloud_forwarder_subnet_cidrs     = local.google_cloud_forwarder_subnet_cidrs
+  alb_certificate_arn = data.aws_acm_certificate.apne1_alb.arn
+  domain_name         = var.domain_name
 
   peer_vpc = {
     id                    = module.apne3.vpc_id
@@ -21,10 +19,8 @@ module "apne1" {
 module "apne3" {
   source = "./apne3"
 
-  alb_certificate_arn                     = data.aws_acm_certificate.apne3_alb.arn
-  domain_name                             = var.domain_name
-  google_cloud_dns_forwarder_source_range = local.google_cloud_dns_forwarder_source_range
-  google_cloud_forwarder_subnet_cidrs     = local.google_cloud_forwarder_subnet_cidrs
+  alb_certificate_arn = data.aws_acm_certificate.apne3_alb.arn
+  domain_name         = var.domain_name
 
   peer_vpc = {
     id                    = module.apne1.vpc_id

@@ -6,14 +6,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.52"
     }
-    google = {
-      source  = "hashicorp/google"
-      version = "~> 7.40"
-    }
-    google-beta = {
-      source  = "hashicorp/google-beta"
-      version = "~> 7.40"
-    }
   }
 }
 
@@ -28,7 +20,3 @@ provider "aws" {
   region  = "ap-northeast-3"
   profile = "prd"
 }
-
-provider "google" {}
-
-provider "google-beta" {}

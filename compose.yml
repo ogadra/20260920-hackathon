@@ -77,11 +77,15 @@ services:
       dockerfile: runner/Dockerfile
     env_file:
       - runner/.env.example
+    environment:
+      JEV_API_KEY: ${JEV_API_KEY}
 
   runner-2:
     image: bunshin-runner
     env_file:
       - runner/.env.example
+    environment:
+      JEV_API_KEY: ${JEV_API_KEY}
     profiles:
       - integration
 

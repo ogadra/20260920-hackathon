@@ -22,12 +22,26 @@ RUN CGO_ENABLED=1 go test -race -v -count=1 ./...
 FROM build AS binary
 RUN CGO_ENABLED=0 go build -o /server .
 
-FROM debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
+# The full image rather than -slim: perl, the standard dpkg tooling and the
+# documentation paths are already there, so `apt-get install` behaves the way
+# it does on a normal box. The apt lists are dropped so a runtime
+# `apt-get update` fetches current indexes instead of replaying a stale
+# snapshot from build time.
+FROM debian:bookworm@sha256:f37a335e82bca302e955fa39f9dfe28f1be618f016f8a2b56318e5a5111afc26
 
-# The slim image ships no ca-certificates package, and the runner needs a trust
-# store to reach the Jev API over TLS. Taking the bundle from the build stage
-# keeps the final image free of an apt transaction.
-COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        curl \
+        dnsutils \
+        iproute2 \
+        iputils-ping \
+        jq \
+        procps \
+        python3 \
+        wget \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=binary /server /server
 EXPOSE 3000

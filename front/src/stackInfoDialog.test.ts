@@ -42,18 +42,16 @@ describe("createStackInfoDialog", () => {
     button.click();
     expect(showModal).toHaveBeenCalled();
     expect(valueOf(dialog, "region-value")).toBe("東京");
-    expect(valueOf(dialog, "cloud-value")).toBe("AWS");
   });
 
   test("the dialog follows the stack the session moved to", () => {
     const { button, dialog, controller } = setup("en");
 
     controller.setStack("ap-northeast-1");
-    controller.setStack("asia-northeast2");
+    controller.setStack("ap-northeast-3");
     button.click();
 
     expect(valueOf(dialog, "region-value")).toBe("Osaka");
-    expect(valueOf(dialog, "cloud-value")).toBe("Google Cloud");
   });
 
   test("a click on the backdrop closes the dialog", () => {

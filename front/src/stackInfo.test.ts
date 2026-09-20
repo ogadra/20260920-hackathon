@@ -1,14 +1,12 @@
 import { describe, test, expect } from "vitest";
-import { Cloud, Region, classifyStack } from "./stackInfo";
+import { Region, classifyStack } from "./stackInfo";
 
 describe("classifyStack", () => {
   test.each([
-    ["asia-northeast1", Region.TOKYO, Cloud.GOOGLE_CLOUD],
-    ["asia-northeast2", Region.OSAKA, Cloud.GOOGLE_CLOUD],
-    ["ap-northeast-1", Region.TOKYO, Cloud.AWS],
-    ["ap-northeast-3", Region.OSAKA, Cloud.AWS],
-  ])("%s is served from %s on %s", (stack, region, cloud) => {
-    expect(classifyStack(stack)).toEqual({ region, cloud });
+    ["ap-northeast-1", Region.TOKYO],
+    ["ap-northeast-3", Region.OSAKA],
+  ])("%s is served from %s", (stack, region) => {
+    expect(classifyStack(stack)).toEqual({ region });
   });
 
   test("an unknown stack name is rejected", () => {

@@ -231,7 +231,7 @@ describe("initTerminal", () => {
 
   test("a recreated shell reports the stack the session moved to", async () => {
     const { els, transcript, cells, stacks, onStack } = setup();
-    const moved = "asia-northeast2";
+    const moved = "ap-northeast-3";
     let shellCalls = 0;
     mockFetch.mockImplementation((url: string) => {
       if (url === "/api/shell") {

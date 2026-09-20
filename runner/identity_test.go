@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -197,80 +196,6 @@ func TestResolveIdentityECSEmptyIPv4(t *testing.T) {
 	_, err := resolveIdentity(context.Background(), deps)
 	if err == nil {
 		t.Fatal("expected error when IPv4Addresses is empty")
-	}
-}
-
-func TestResolveIdentityGKEPodIP(t *testing.T) {
-	deps := identityDeps{
-		getenv: stubGetenv(map[string]string{"STACK_NAME": "asia-northeast1"}),
-		interfaceAddrs: func() ([]net.Addr, error) {
-			return []net.Addr{
-				&net.IPNet{IP: net.ParseIP("127.0.0.1"), Mask: net.CIDRMask(8, 32)},
-				&net.IPNet{IP: net.ParseIP("10.4.0.9"), Mask: net.CIDRMask(24, 32)},
-			}, nil
-		},
-		randRead: stubRandRead(0x02, nil),
-	}
-
-	id, err := resolveIdentity(context.Background(), deps)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if id.PrivateHost != "10.4.0.9" {
-		t.Errorf("PrivateHost = %q, want %q", id.PrivateHost, "10.4.0.9")
-	}
-}
-
-func TestResolveIdentityGKEAsiaNortheast2(t *testing.T) {
-	deps := identityDeps{
-		getenv: stubGetenv(map[string]string{"STACK_NAME": "asia-northeast2"}),
-		interfaceAddrs: func() ([]net.Addr, error) {
-			return []net.Addr{
-				&net.IPNet{IP: net.ParseIP("10.4.0.10"), Mask: net.CIDRMask(24, 32)},
-			}, nil
-		},
-		randRead: stubRandRead(0x02, nil),
-	}
-
-	id, err := resolveIdentity(context.Background(), deps)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if id.PrivateHost != "10.4.0.10" {
-		t.Errorf("PrivateHost = %q, want %q", id.PrivateHost, "10.4.0.10")
-	}
-}
-
-func TestResolveIdentityGKEInterfaceAddrsError(t *testing.T) {
-	deps := identityDeps{
-		getenv: stubGetenv(map[string]string{"STACK_NAME": "asia-northeast1"}),
-		interfaceAddrs: func() ([]net.Addr, error) {
-			return nil, errors.New("interface lookup failed")
-		},
-		randRead: stubRandRead(0x02, nil),
-	}
-
-	_, err := resolveIdentity(context.Background(), deps)
-	if err == nil {
-		t.Fatal("expected error when interfaceAddrs fails")
-	}
-}
-
-func TestResolveIdentityGKENoIPv4(t *testing.T) {
-	deps := identityDeps{
-		getenv: stubGetenv(map[string]string{"STACK_NAME": "asia-northeast1"}),
-		interfaceAddrs: func() ([]net.Addr, error) {
-			return []net.Addr{
-				&net.IPNet{IP: net.ParseIP("127.0.0.1"), Mask: net.CIDRMask(8, 32)},
-				&net.IPNet{IP: net.ParseIP("fe80::1"), Mask: net.CIDRMask(64, 128)},
-			}, nil
-		},
-		randRead: stubRandRead(0x02, nil),
-	}
-
-	_, err := resolveIdentity(context.Background(), deps)
-	if err == nil {
-		t.Fatal("expected error when no non-loopback IPv4 address is found")
 	}
 }
 

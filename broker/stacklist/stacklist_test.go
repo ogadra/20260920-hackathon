@@ -42,8 +42,8 @@ func TestParse(t *testing.T) {
 		{"empty input", "", "ap-northeast-1", []string{}, false},
 		{"self absent", "ap-northeast-2,ap-northeast-3", "ap-northeast-1", []string{"ap-northeast-2", "ap-northeast-3"}, false},
 		{"self at head", " ap-northeast-1 , ,ap-northeast-3,ap-northeast-2", "ap-northeast-1", []string{"ap-northeast-3", "ap-northeast-2"}, true},
-		{"self in middle rotates", "ap-northeast-1,ap-northeast-3,asia-northeast1,asia-northeast2", "ap-northeast-3", []string{"asia-northeast1", "asia-northeast2", "ap-northeast-1"}, true},
-		{"self at tail rotates", "ap-northeast-1,ap-northeast-3,asia-northeast1,asia-northeast2", "asia-northeast2", []string{"ap-northeast-1", "ap-northeast-3", "asia-northeast1"}, true},
+		{"self in middle rotates", "ap-northeast-1,ap-northeast-3,ap-northeast-2,ap-southeast-1", "ap-northeast-3", []string{"ap-northeast-2", "ap-southeast-1", "ap-northeast-1"}, true},
+		{"self at tail rotates", "ap-northeast-1,ap-northeast-3,ap-northeast-2,ap-southeast-1", "ap-southeast-1", []string{"ap-northeast-1", "ap-northeast-3", "ap-northeast-2"}, true},
 		{"self present multiple times", "ap-northeast-1,ap-northeast-3,ap-northeast-1", "ap-northeast-1", []string{"ap-northeast-3"}, true},
 		{"only self", "ap-northeast-1", "ap-northeast-1", []string{}, true},
 	}

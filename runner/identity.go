@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 )
 
@@ -14,11 +13,9 @@ import (
 // default: an unset or unrecognized STACK_NAME must fail startup rather than
 // silently pick a resolution strategy.
 const (
-	stackAPNortheast1   = "ap-northeast-1"
-	stackAPNortheast3   = "ap-northeast-3"
-	stackAsiaNortheast1 = "asia-northeast1"
-	stackAsiaNortheast2 = "asia-northeast2"
-	stackLocal          = "local"
+	stackAPNortheast1 = "ap-northeast-1"
+	stackAPNortheast3 = "ap-northeast-3"
+	stackLocal        = "local"
 )
 
 // Identity holds the runner registration parameters resolved at startup.
@@ -32,11 +29,10 @@ type Identity struct {
 
 // identityDeps holds injectable dependencies for identity resolution.
 type identityDeps struct {
-	getenv         func(string) string
-	hostname       func() (string, error)
-	httpGet        func(ctx context.Context, url string) ([]byte, error)
-	interfaceAddrs func() ([]net.Addr, error)
-	randRead       func([]byte) (int, error)
+	getenv   func(string) string
+	hostname func() (string, error)
+	httpGet  func(ctx context.Context, url string) ([]byte, error)
+	randRead func([]byte) (int, error)
 }
 
 // ecsNetwork represents a single network attachment in ECS container metadata.
@@ -83,8 +79,6 @@ func resolvePrivateHost(ctx context.Context, deps identityDeps) (string, error) 
 	switch stackName {
 	case stackAPNortheast1, stackAPNortheast3:
 		return privateHostFromECS(ctx, deps)
-	case stackAsiaNortheast1, stackAsiaNortheast2:
-		return privateHostFromPodIP(deps)
 	case stackLocal:
 		return privateHostFromHostname(deps)
 	default:
@@ -109,26 +103,6 @@ func privateHostFromECS(ctx context.Context, deps identityDeps) (string, error) 
 		return "", fmt.Errorf("no IPv4 address in ECS container metadata")
 	}
 	return container.Networks[0].IPv4Addresses[0], nil
-}
-
-// privateHostFromPodIP resolves the runner's own address on GKE, where there is
-// no metadata endpoint analogous to ECS: the Pod's IP is only observable from
-// inside the container via its network interfaces.
-func privateHostFromPodIP(deps identityDeps) (string, error) {
-	addrs, err := deps.interfaceAddrs()
-	if err != nil {
-		return "", fmt.Errorf("get interface addresses: %w", err)
-	}
-	for _, addr := range addrs {
-		ipNet, ok := addr.(*net.IPNet)
-		if !ok || ipNet.IP.IsLoopback() {
-			continue
-		}
-		if ip4 := ipNet.IP.To4(); ip4 != nil {
-			return ip4.String(), nil
-		}
-	}
-	return "", fmt.Errorf("no non-loopback IPv4 address found")
 }
 
 func privateHostFromHostname(deps identityDeps) (string, error) {

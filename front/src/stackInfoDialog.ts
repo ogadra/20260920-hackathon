@@ -1,5 +1,5 @@
 import { translate, type Lang, type MessageKey } from "./i18n";
-import { Cloud, Region, classifyStack, type StackInfo } from "./stackInfo";
+import { Region, classifyStack, type StackInfo } from "./stackInfo";
 
 export interface StackInfoDialog {
   setStack(stack: string): void;
@@ -8,11 +8,6 @@ export interface StackInfoDialog {
 const REGION_KEY: Record<Region, MessageKey> = {
   [Region.TOKYO]: "stackRegionTokyo",
   [Region.OSAKA]: "stackRegionOsaka",
-};
-
-const CLOUD_KEY: Record<Cloud, MessageKey> = {
-  [Cloud.GOOGLE_CLOUD]: "stackCloudGoogleCloud",
-  [Cloud.AWS]: "stackCloudAws",
 };
 
 export const createStackInfoDialog = (
@@ -27,7 +22,6 @@ export const createStackInfoDialog = (
     <h2 data-role="title" id="stack-info-title" class="stack-info-title"></h2>
     <dl class="stack-info-list">
       <dt data-role="region-label"></dt><dd data-role="region-value"></dd>
-      <dt data-role="cloud-label"></dt><dd data-role="cloud-value"></dd>
     </dl>
     <form method="dialog" class="stack-info-actions">
       <button type="submit" data-role="close"></button>
@@ -44,13 +38,10 @@ export const createStackInfoDialog = (
   const title = pick<HTMLElement>("title");
   const regionLabel = pick<HTMLElement>("region-label");
   const regionValue = pick<HTMLElement>("region-value");
-  const cloudLabel = pick<HTMLElement>("cloud-label");
-  const cloudValue = pick<HTMLElement>("cloud-value");
   const closeButton = pick<HTMLButtonElement>("close");
 
   title.textContent = translate(lang, "stackInfoLabel");
   regionLabel.textContent = translate(lang, "stackInfoRegion");
-  cloudLabel.textContent = translate(lang, "stackInfoCloud");
   closeButton.textContent = translate(lang, "stackInfoClose");
   button.textContent = translate(lang, "stackInfoLabel");
   button.disabled = true;
@@ -58,7 +49,6 @@ export const createStackInfoDialog = (
   button.addEventListener("click", () => {
     if (current === null) return;
     regionValue.textContent = translate(lang, REGION_KEY[current.region]);
-    cloudValue.textContent = translate(lang, CLOUD_KEY[current.cloud]);
     dialog.showModal();
   });
 

@@ -128,7 +128,7 @@ func TestIntegrationExecuteSSEResponse(t *testing.T) {
 	sm := NewShellManager()
 	defer sm.CloseAll()
 
-	ts := httptest.NewServer(newHandler(sm))
+	ts := httptest.NewServer(newHandler(sm, allowAllValidator{}))
 	defer ts.Close()
 
 	sid := createShell(t, ts)
@@ -155,7 +155,7 @@ func TestIntegrationNonWhitelistedCommand(t *testing.T) {
 	sm := NewShellManager()
 	defer sm.CloseAll()
 
-	ts := httptest.NewServer(newHandler(sm))
+	ts := httptest.NewServer(newHandler(sm, allowAllValidator{}))
 	defer ts.Close()
 
 	sid := createShell(t, ts)
@@ -197,7 +197,7 @@ func TestIntegrationExecuteAfterDelete(t *testing.T) {
 	sm := NewShellManager()
 	defer sm.CloseAll()
 
-	ts := httptest.NewServer(newHandler(sm))
+	ts := httptest.NewServer(newHandler(sm, allowAllValidator{}))
 	defer ts.Close()
 
 	sid := createShell(t, ts)
@@ -238,7 +238,7 @@ func TestIntegrationShellIsolation(t *testing.T) {
 	sm := NewShellManager()
 	defer sm.CloseAll()
 
-	ts := httptest.NewServer(newHandler(sm))
+	ts := httptest.NewServer(newHandler(sm, allowAllValidator{}))
 	defer ts.Close()
 
 	sid1 := createShell(t, ts)
@@ -267,7 +267,7 @@ func TestIntegrationCreateDeleteLifecycle(t *testing.T) {
 	sm := NewShellManager()
 	defer sm.CloseAll()
 
-	ts := httptest.NewServer(newHandler(sm))
+	ts := httptest.NewServer(newHandler(sm, allowAllValidator{}))
 	defer ts.Close()
 
 	// Create.
@@ -323,7 +323,7 @@ func TestIntegrationConcurrentExecute(t *testing.T) {
 	sm := NewShellManager()
 	defer sm.CloseAll()
 
-	ts := httptest.NewServer(newHandler(sm))
+	ts := httptest.NewServer(newHandler(sm, allowAllValidator{}))
 	defer ts.Close()
 
 	sid := createShell(t, ts)
@@ -390,7 +390,7 @@ func TestIntegrationNonWhitelistedSSE(t *testing.T) {
 	sm := NewShellManager()
 	defer sm.CloseAll()
 
-	ts := httptest.NewServer(newHandler(sm))
+	ts := httptest.NewServer(newHandler(sm, allowAllValidator{}))
 	defer ts.Close()
 
 	sid := createShell(t, ts)

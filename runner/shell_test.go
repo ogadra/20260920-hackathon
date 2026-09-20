@@ -711,10 +711,10 @@ func extractMarker(written string) string {
 	return ""
 }
 
-// TestStreamReSourcesHmSessionVars verifies that the script re-sources
-// hm-session-vars.sh before the command and after capturing the exit code.
-// A `home-manager switch` then takes effect without exiting the shell.
-func TestStreamReSourcesHmSessionVars(t *testing.T) {
+// TestStreamCapturesExitCodeAfterCommand verifies that the script runs the
+// command first and captures its exit code on the next line, so `$?` belongs
+// to the user's command and not to the marker echoes.
+func TestStreamCapturesExitCodeAfterCommand(t *testing.T) {
 	stdinCapture := &markerCapturingWriter{}
 	stdoutR, stdoutW := io.Pipe()
 
@@ -767,22 +767,13 @@ func TestStreamReSourcesHmSessionVars(t *testing.T) {
 	}
 
 	written := stdinCapture.String()
-	reloadSnippet := `unset __HM_SESS_VARS_SOURCED; . "$HOME/.nix-profile/etc/profile.d/hm-session-vars.sh" 2>/dev/null || true`
-	if count := strings.Count(written, reloadSnippet); count < 2 {
-		t.Errorf("expected reload snippet at least twice (before and after command), got %d.\nscript: %s", count, written)
-	}
-
-	firstReload := strings.Index(written, reloadSnippet)
 	cmdIdx := strings.Index(written, "echo hello")
 	ecIdx := strings.Index(written, "__ec=$?")
-	if firstReload < 0 || cmdIdx < 0 || ecIdx < 0 {
+	if cmdIdx < 0 || ecIdx < 0 {
 		t.Fatalf("missing expected components in script.\nscript: %s", written)
 	}
-	if strings.Index(written[ecIdx:], reloadSnippet) < 0 {
-		t.Errorf("expected a reload snippet after __ec=$?.\nscript: %s", written)
-	}
-	if firstReload >= cmdIdx || cmdIdx >= ecIdx {
-		t.Errorf("expected reload before command before __ec=$?.\nscript: %s", written)
+	if cmdIdx >= ecIdx {
+		t.Errorf("expected the command before __ec=$?.\nscript: %s", written)
 	}
 }
 

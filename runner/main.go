@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 )
@@ -29,6 +30,38 @@ var registerFn = register
 // deregisterFn is the function used to deregister from the broker on shutdown.
 // It defaults to deregister and can be replaced in tests.
 var deregisterFn = deregister
+
+// newValidatorFn builds the command validator from the environment.
+// It defaults to newJevValidatorFromEnv and can be replaced in tests.
+var newValidatorFn = newJevValidatorFromEnv
+
+// jevRequestTimeout bounds a single Jev call. Jev answers in well under a
+// second, so a command that waits longer is treated as unreachable rather than
+// held until the client gives up.
+const jevRequestTimeout = 3 * time.Second
+
+// newJevValidatorFromEnv reads the Jev settings. Every variable is required:
+// a runner that cannot judge commands must fail at startup, not at the first
+// request.
+func newJevValidatorFromEnv() (Validator, error) {
+	apiKey := os.Getenv("JEV_API_KEY")
+	if apiKey == "" {
+		return nil, fmt.Errorf("missing required environment variable: JEV_API_KEY")
+	}
+	model := os.Getenv("JEV_MODEL")
+	if model == "" {
+		return nil, fmt.Errorf("missing required environment variable: JEV_MODEL")
+	}
+	rawThreshold := os.Getenv("JEV_SAFE_THRESHOLD")
+	if rawThreshold == "" {
+		return nil, fmt.Errorf("missing required environment variable: JEV_SAFE_THRESHOLD")
+	}
+	threshold, err := strconv.ParseFloat(rawThreshold, 64)
+	if err != nil || threshold < 0 || threshold > 1 {
+		return nil, fmt.Errorf("JEV_SAFE_THRESHOLD must be a number in [0,1], got %q", rawThreshold)
+	}
+	return NewJevValidator(http.DefaultClient, jevEndpoint, apiKey, model, threshold, jevRequestTimeout), nil
+}
 
 // main reads the RUNNER_API_PORT environment variable and starts the HTTP server
 // with graceful shutdown on SIGTERM/SIGINT.
@@ -80,6 +113,12 @@ func start(addr string) error {
 		return fmt.Errorf("missing required environment variable: BROKER_URL")
 	}
 
+	validator, err := newValidatorFn()
+	if err != nil {
+		ln.Close()
+		return fmt.Errorf("build validator: %w", err)
+	}
+
 	regCtx, regCancel := context.WithCancel(context.Background())
 	go func() {
 		select {
@@ -104,10 +143,10 @@ func start(addr string) error {
 
 	cfg := serverConfig{
 		sm:              NewShellManager(),
+		validator:       validator,
 		shutdownTimeout: 10 * time.Second,
 		brokerURL:       brokerURL,
 		runnerID:        identity.RunnerID,
-		superviseFn:     runAppSupervisorFn,
 	}
 
 	return run(ln, sig, cfg)
@@ -117,11 +156,11 @@ func start(addr string) error {
 // Fields default to production values when created via main.
 type serverConfig struct {
 	sm              *ShellManager
+	validator       Validator
 	shutdownTimeout time.Duration
 	handler         http.Handler
 	brokerURL       string
 	runnerID        string
-	superviseFn     func(ctx context.Context)
 }
 
 // run starts the HTTP server on the given listener and blocks until a signal is
@@ -130,15 +169,8 @@ type serverConfig struct {
 func run(ln net.Listener, sigCh <-chan os.Signal, cfg serverConfig) error {
 	h := cfg.handler
 	if h == nil {
-		h = newHandler(cfg.sm)
+		h = newHandler(cfg.sm, cfg.validator)
 	}
-
-	supCtx, supCancel := context.WithCancel(context.Background())
-	supDone := make(chan struct{})
-	go func() {
-		defer close(supDone)
-		cfg.superviseFn(supCtx)
-	}()
 
 	srv := &http.Server{
 		Handler: h,
@@ -154,15 +186,11 @@ func run(ln net.Listener, sigCh <-chan os.Signal, cfg serverConfig) error {
 
 	select {
 	case err := <-serveErr:
-		supCancel()
-		<-supDone
 		return fmt.Errorf("serve: %w", err)
 	case <-sigCh:
 	}
 
 	log.Println("shutting down...")
-
-	supCancel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.shutdownTimeout)
 	defer cancel()
@@ -190,8 +218,6 @@ func run(ln net.Listener, sigCh <-chan os.Signal, cfg serverConfig) error {
 			firstErr = err
 		}
 	}
-
-	<-supDone
 
 	log.Println("shutdown complete")
 	return firstErr

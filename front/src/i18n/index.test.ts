@@ -35,6 +35,14 @@ describe("translate", () => {
       ja: "実行環境に接続できません",
     },
     errorCommandTooLong: { en: "The command is too long", ja: "コマンドが長すぎます" },
+    errorCommandRejected: {
+      en: "Blocked by the safety check",
+      ja: "安全性チェックで拒否されました",
+    },
+    errorValidationUnavailable: {
+      en: "The safety check is unavailable, so nothing was run",
+      ja: "安全性チェックを実行できないため、コマンドを実行していません",
+    },
     errorNetwork: { en: "Cannot connect to the server", ja: "サーバーに接続できません" },
     errorInternal: {
       en: "An internal server error occurred",

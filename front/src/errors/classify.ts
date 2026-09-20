@@ -1,7 +1,7 @@
 import type { MessageKey } from "../i18n";
 import { AppError } from "./AppError";
 
-type ErrorBody = { code?: unknown };
+type ErrorBody = { code?: unknown; error?: unknown };
 
 const CODE_MAP: Record<string, MessageKey> = {
   NO_IDLE_RUNNER: "errorNoIdleRunner",
@@ -9,6 +9,13 @@ const CODE_MAP: Record<string, MessageKey> = {
   SESSION_NOT_FOUND: "errorSessionLost",
   GATEWAY_TIMEOUT: "errorGatewayTimeout",
   BAD_GATEWAY: "errorBadGateway",
+};
+
+// 拒否と検証不能はどちらもrunnerのvalidatorだけがerror本文で返す。
+// codeを返すbroker/nginxの同じstatusとは本文の形で分かれる
+const VALIDATION_MAP: Record<number, MessageKey> = {
+  403: "errorCommandRejected",
+  503: "errorValidationUnavailable",
 };
 
 const parseBody = async (res: Response): Promise<ErrorBody> => {
@@ -31,9 +38,14 @@ const keyFromStatus = (status: number): MessageKey => {
 export const classifyResponse = async (res: Response): Promise<AppError> => {
   const body = await parseBody(res);
   const code = typeof body.code === "string" ? body.code : "";
+  const reason = typeof body.error === "string" ? body.error : "";
   console.error("classifyResponse", { status: res.status, body });
   if (code !== "" && CODE_MAP[code] !== undefined) {
     return new AppError(CODE_MAP[code]);
+  }
+  const validationKey = VALIDATION_MAP[res.status];
+  if (reason !== "" && validationKey !== undefined) {
+    return new AppError(validationKey, reason);
   }
   return new AppError(keyFromStatus(res.status));
 };

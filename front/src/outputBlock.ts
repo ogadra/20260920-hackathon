@@ -13,8 +13,7 @@ export interface OutputBlock {
 
 /**
  * Upper bound on the rows the data needs, counting every visible character as full width.
- * lolcat colours a single character with a whole escape sequence, so the escapes are dropped
- * rather than counted.
+ * Escape sequences occupy no cell, so they are skipped rather than counted.
  *
  * Each newline claims a row of its own. A run counted as one long line reserves far too
  * little, and the lines beyond the scrollback limit leave the buffer for good.

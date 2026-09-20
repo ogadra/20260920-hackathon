@@ -71,7 +71,8 @@ export const createHistory = (): History => {
 
 const messageOf = (lang: Lang, err: unknown): string => {
   const classified = err instanceof AppError ? err : classifyThrown(err);
-  return translate(lang, classified.key);
+  const message = translate(lang, classified.key);
+  return classified.detail === null ? message : `${message}: ${classified.detail}`;
 };
 
 export const initTerminal = (

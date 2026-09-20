@@ -42,6 +42,26 @@ describe("classifyResponse", () => {
       want: "errorBadGateway",
     },
     {
+      name: "runner 403 with the validator verdict",
+      res: jsonResponse(403, { error: "safety probability 0.13 (threshold 0.80)" }),
+      want: "errorCommandRejected",
+    },
+    {
+      name: "runner 403 with an unusable validator response",
+      res: jsonResponse(403, { error: "jev: response is not valid JSON" }),
+      want: "errorCommandRejected",
+    },
+    {
+      name: "runner 503 with the validator out of reach",
+      res: jsonResponse(503, { error: "validation unavailable: 429 Too Many Requests" }),
+      want: "errorValidationUnavailable",
+    },
+    {
+      name: "nginx 403 FORBIDDEN folded to internal",
+      res: jsonResponse(403, { code: "FORBIDDEN", message: "Session invalid." }),
+      want: "errorInternal",
+    },
+    {
       name: "nginx 401 UNAUTHORIZED folded to internal",
       res: jsonResponse(401, { code: "UNAUTHORIZED", message: "Session cookie required." }),
       want: "errorInternal",
@@ -87,6 +107,18 @@ describe("classifyResponse", () => {
     const err = await classifyResponse(res);
     expect(err).toBeInstanceOf(AppError);
     expect(err.key).toBe(want);
+  });
+
+  test("the validator verdict is carried as the detail", async () => {
+    const err = await classifyResponse(
+      jsonResponse(403, { error: "safety probability 0.13 (threshold 0.80)" }),
+    );
+    expect(err.detail).toBe("safety probability 0.13 (threshold 0.80)");
+  });
+
+  test("a response without a verdict carries no detail", async () => {
+    const err = await classifyResponse(jsonResponse(503, { code: "NO_IDLE_RUNNER" }));
+    expect(err.detail).toBeNull();
   });
 });
 

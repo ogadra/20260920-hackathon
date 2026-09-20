@@ -2,7 +2,7 @@
 import { describe, expect, test } from "vitest";
 import { requiredRows } from "./outputBlock";
 
-const colour = (text: string): string =>
+const perCharacterColour = (text: string): string =>
   [...text].map((ch, i) => `[38;5;${String(196 + (i % 6))}m${ch}`).join("");
 
 describe("requiredRows", () => {
@@ -30,11 +30,11 @@ describe("requiredRows", () => {
     expect(requiredRows("0123456789\nok", 10)).toBe(4);
   });
 
-  test("drops the escapes lolcat wraps around each character", () => {
-    expect(requiredRows(colour("0123456789"), 10)).toBe(requiredRows("0123456789", 10));
+  test("drops the escape sequences wrapped around each character", () => {
+    expect(requiredRows(perCharacterColour("0123456789"), 10)).toBe(requiredRows("0123456789", 10));
   });
 
   test("keeps counting the characters that follow a colour change", () => {
-    expect(requiredRows(`[38;5;198mNix[39m`, 80)).toBe(requiredRows("Nix", 80));
+    expect(requiredRows(`[38;5;198mdebian[39m`, 80)).toBe(requiredRows("debian", 80));
   });
 });

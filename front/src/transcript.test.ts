@@ -29,10 +29,10 @@ describe("createTranscript", () => {
   test("a cell holds the command and an output container", () => {
     const { root, containers, transcript } = setup();
 
-    transcript.begin("which pokemonsay");
+    transcript.begin("cat /etc/os-release");
 
     const cell = root.querySelector(".cell");
-    expect(cell?.querySelector("code")?.textContent).toBe("which pokemonsay");
+    expect(cell?.querySelector("code")?.textContent).toBe("cat /etc/os-release");
     expect(containers[0]).toBe(cell?.querySelector(".cell-output"));
   });
 

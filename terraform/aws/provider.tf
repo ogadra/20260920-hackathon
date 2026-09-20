@@ -27,10 +27,3 @@ provider "aws" {
   region  = "ap-northeast-3"
   profile = var.aws_profile
 }
-
-# CloudFront に紐づく WAFv2 は us-east-1 でしか作成できない
-provider "aws" {
-  alias   = "use1"
-  region  = "us-east-1"
-  profile = var.aws_profile
-}

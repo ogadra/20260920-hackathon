@@ -32,7 +32,7 @@
       "secrets": [
         {
           "name": "JEV_API_KEY",
-          "valueFrom": "{{ tfstate `module.apne1.aws_secretsmanager_secret.jev_api_key.arn` }}"
+          "valueFrom": "{{ tfstate `module.apne1.aws_secretsmanager_secret.jev_api_key.arn` }}:JEV_API_KEY::"
         }
       ],
       "logConfiguration": {

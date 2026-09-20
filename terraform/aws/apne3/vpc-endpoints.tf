@@ -87,6 +87,21 @@ resource "aws_vpc_endpoint" "apne3_logs" {
   })
 }
 
+resource "aws_vpc_endpoint" "apne3_secretsmanager" {
+  vpc_id            = aws_vpc.apne3.id
+  service_name      = "com.amazonaws.ap-northeast-3.secretsmanager"
+  vpc_endpoint_type = "Interface"
+
+  subnet_ids         = aws_subnet.apne3_private[*].id
+  security_group_ids = [aws_security_group.apne3_vpc_endpoint_for_ecs.id]
+
+  private_dns_enabled = true
+
+  tags = merge(local.common_tags, {
+    Name = "bunshin-apne3-secretsmanager"
+  })
+}
+
 resource "aws_vpc_endpoint" "apne3_s3" {
   vpc_id       = aws_vpc.apne3.id
   service_name = "com.amazonaws.ap-northeast-3.s3"

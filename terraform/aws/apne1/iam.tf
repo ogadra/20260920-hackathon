@@ -72,6 +72,25 @@ resource "aws_iam_role_policy" "execution_logs" {
   policy = data.aws_iam_policy_document.execution_logs[each.key].json
 }
 
+data "aws_iam_policy_document" "execution_jev_api_key" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "secretsmanager:GetSecretValue",
+    ]
+    resources = [
+      aws_secretsmanager_secret.jev_api_key.arn,
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "execution_jev_api_key" {
+  # checkov:skip=CKV_BUNSHIN_1:Resource does not support tags
+  name   = "bunshin-apne1-runner-execution-jev-api-key"
+  role   = aws_iam_role.ecs_task_execution["runner"].id
+  policy = data.aws_iam_policy_document.execution_jev_api_key.json
+}
+
 resource "aws_iam_role" "task" {
   for_each = local.ecs_services
 

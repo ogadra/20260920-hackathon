@@ -34,33 +34,16 @@ pre-commit:
       glob: "*.tf"
       stage_fixed: true
       run: terraform fmt {staged_files}
-    021_terraform_fmt_google_cloud:
-      root: "terraform/google-cloud/"
-      glob: "*.tf"
-      stage_fixed: true
-      run: terraform fmt {staged_files}
     022_terraform_fmt_check_aws:
       root: "terraform/aws/"
-      glob: "*.tf"
-      run: terraform fmt -check {staged_files}
-    022_terraform_fmt_check_google_cloud:
-      root: "terraform/google-cloud/"
       glob: "*.tf"
       run: terraform fmt -check {staged_files}
     023_terraform_validate_aws:
       root: "terraform/aws/"
       glob: "*.tf"
       run: terraform validate -json | jq -e '.warning_count == 0 and .error_count == 0'
-    023_terraform_validate_google_cloud:
-      root: "terraform/google-cloud/"
-      glob: "*.tf"
-      run: terraform validate -json | jq -e '.warning_count == 0 and .error_count == 0'
     024_tflint_aws:
       root: "terraform/aws/"
-      glob: "*.tf"
-      run: tflint --init && tflint
-    024_tflint_google_cloud:
-      root: "terraform/google-cloud/"
       glob: "*.tf"
       run: tflint --init && tflint
     031_fix_front:
@@ -78,7 +61,7 @@ pre-commit:
         checkov -d . --quiet --compact --external-checks-dir terraform/checkov --skip-path "($untracked)"
     041_nginx_config_test:
       glob: "nginx/**/*.conf"
-      run: docker build --target config-test --build-arg CLOUD=AWS -f nginx/Dockerfile . && docker build --target config-test --build-arg CLOUD=GOOGLE_CLOUD -f nginx/Dockerfile .
+      run: docker build --target config-test -f nginx/Dockerfile .
     004_gitleaks:
       run: gitleaks protect --staged
     005_trivy:

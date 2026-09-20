@@ -59,7 +59,6 @@ resource "aws_lb" "api_ingress" {
   name     = "bunshin-api-ingress"
   internal = true
   # nginxはX-Forwarded-For末尾からclientのIP:portを読む。
-  # Google CloudのX-Bunshin-Edge-Client-Addressと同じ形式に揃える。
   enable_xff_client_port = true
   load_balancer_type     = "application"
   ip_address_type        = "dualstack"

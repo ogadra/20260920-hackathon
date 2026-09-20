@@ -5,7 +5,7 @@ _validate-env env:
     @if [ "{{env}}" != "stg" ] && [ "{{env}}" != "prd" ]; then echo "Error: env must be 'stg' or 'prd', got '{{env}}'"; exit 1; fi
 
 _validate-vendor vendor:
-    @if [ "{{vendor}}" != "aws" ] && [ "{{vendor}}" != "google-cloud" ] && [ "{{vendor}}" != "shared" ] && [ "{{vendor}}" != "archive" ]; then echo "Error: vendor must be 'aws', 'google-cloud', 'shared' or 'archive', got '{{vendor}}'"; exit 1; fi
+    @if [ "{{vendor}}" != "aws" ] && [ "{{vendor}}" != "archive" ]; then echo "Error: vendor must be 'aws' or 'archive', got '{{vendor}}'"; exit 1; fi
 
 _validate-tf-backend-bucket:
     @if [ -z "${TF_BACKEND_BUCKET:-}" ]; then echo "Error: TF_BACKEND_BUCKET must be set (see .env.example)"; exit 1; fi
@@ -32,12 +32,6 @@ apply vendor env: (_validate-vendor vendor) (_validate-env env)
 # Deploy services for the specified environment
 deploy vendor env *service: (_validate-vendor vendor) (_validate-env env)
     scripts/{{vendor}}/deploy.sh {{env}} {{service}}
-
-# Re-apply k8s manifests and rollout-restart bunshin deployments (no image build)
-# Picks up replicas changes in deploy/google-cloud/{stacks,regions/*/region}.env and
-# resets pod state. Requires images for the current git HEAD already pushed.
-redeploy env: (_validate-env env)
-    K8S_ONLY=1 scripts/google-cloud/deploy.sh {{env}}
 
 # Destroy resources for the specified environment
 destroy vendor env: (_validate-vendor vendor) (_validate-env env)

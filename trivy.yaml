@@ -1,8 +1,5 @@
 exit-code: 1
 ignorefile: .trivyignore.yaml
-rego:
-  data:
-    - .trivy-data
 scan:
   skip-dirs:
     - .claude

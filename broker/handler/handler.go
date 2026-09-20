@@ -17,8 +17,6 @@ import (
 
 var runnerHostRe = regexp.MustCompile(`^[A-Za-z0-9.-]+$`)
 
-var sessionHexRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
-
 // sessionIDCookie は session 識別用の cookie 名。
 const sessionIDCookie = "session_id"
 
@@ -105,39 +103,6 @@ func (h *Handler) GetResolveSession(c *gin.Context) {
 	c.Header(stackNameHeader, h.stackSelf)
 	c.Header(runnerHostHeader, result.RunnerHost)
 	c.Status(http.StatusOK)
-}
-
-// GetResolveApp は GET /resolve/app を処理し Host の先頭 hex ラベルから所属 runner を引く。
-// port-forward 用に session 割り当ては行わず、既存 session の runner host のみ返す。
-// 自 stack / internal_domain 完全一致は nginx で完結しているため、broker は hex ラベルだけ検証する。
-func (h *Handler) GetResolveApp(c *gin.Context) {
-	hex, ok := extractSessionHex(c.Request.Host)
-	if !ok {
-		writeError(c, http.StatusBadRequest, model.CodeInvalidRequest, "Host must start with 32 lowercase hex characters followed by a dot")
-		return
-	}
-	result, err := h.svc.LookupSession(c.Request.Context(), hex)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			writeError(c, http.StatusNotFound, model.CodeSessionNotFound, "session not found")
-			return
-		}
-		writeError(c, http.StatusInternalServerError, model.CodeInternalError, "failed to look up session")
-		return
-	}
-	c.Header(runnerHostHeader, result.RunnerHost)
-	c.Status(http.StatusOK)
-}
-
-func extractSessionHex(host string) (string, bool) {
-	label, _, ok := strings.Cut(host, ".")
-	if !ok {
-		return "", false
-	}
-	if !sessionHexRe.MatchString(label) {
-		return "", false
-	}
-	return label, true
 }
 
 // X-Fallback-Stack の有無を転送済み判定に兼用し、専用のマーカーヘッダを増やさない。

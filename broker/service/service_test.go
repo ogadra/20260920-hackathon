@@ -74,16 +74,6 @@ func healthyChecker() Option {
 	return WithChecker(&mockChecker{checkFn: func(context.Context, string) error { return nil }})
 }
 
-// noCallChecker は Check が呼ばれた瞬間に t.Fatal を起こす checker を注入する Option。
-// healthcheck を行わない契約 (LookupSession 等) を回帰的に守るために使う。
-func noCallChecker(t *testing.T) Option {
-	t.Helper()
-	return WithChecker(&mockChecker{checkFn: func(context.Context, string) error {
-		t.Fatal("checker.Check must not be called")
-		return nil
-	}})
-}
-
 // suppressLog はテスト中のログ出力を抑制し、テスト終了時に復元する。
 func suppressLog(t *testing.T) {
 	t.Helper()
@@ -933,60 +923,5 @@ func TestResolveSession_DeleteError_ExistingRunner(t *testing.T) {
 	_, err := svc.ResolveSession(context.Background(), "sess-1")
 	if err == nil {
 		t.Fatal("expected error")
-	}
-}
-
-// TestLookupSession_Existing は hex を stackPrefix と結合して FindBySessionID を呼ぶことを検証する。
-// 見つかった runner の PrivateHost を LookupResult に載せて返すことも検証する。
-func TestLookupSession_Existing(t *testing.T) {
-	var gotSessionID string
-	repo := &mockRepository{
-		findBySessionIDFn: func(_ context.Context, sessionID string) (*model.Runner, error) {
-			gotSessionID = sessionID
-			return &model.Runner{RunnerID: "r1", PrivateHost: "10.0.0.1"}, nil
-		},
-	}
-	svc := NewBrokerService(repo, "ap-northeast-1", noCallChecker(t))
-
-	result, err := svc.LookupSession(context.Background(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if gotSessionID != "ap-northeast-1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
-		t.Errorf("FindBySessionID sessionID = %q, want stackPrefix + \"_\" + hex", gotSessionID)
-	}
-	if result.RunnerHost != "10.0.0.1" {
-		t.Errorf("RunnerHost = %q, want %q", result.RunnerHost, "10.0.0.1")
-	}
-}
-
-// TestLookupSession_NotFound は store.ErrNotFound をそのまま透過することを検証する。
-func TestLookupSession_NotFound(t *testing.T) {
-	repo := &mockRepository{
-		findBySessionIDFn: func(context.Context, string) (*model.Runner, error) {
-			return nil, store.ErrNotFound
-		},
-	}
-	svc := NewBrokerService(repo, "ap-northeast-1", noCallChecker(t))
-
-	_, err := svc.LookupSession(context.Background(), "00112233445566778899aabbccddeeff")
-	if !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("err = %v, want store.ErrNotFound", err)
-	}
-}
-
-// TestLookupSession_RepoError は repository のその他エラーを透過することを検証する。
-func TestLookupSession_RepoError(t *testing.T) {
-	want := errors.New("boom")
-	repo := &mockRepository{
-		findBySessionIDFn: func(context.Context, string) (*model.Runner, error) {
-			return nil, want
-		},
-	}
-	svc := NewBrokerService(repo, "ap-northeast-1", noCallChecker(t))
-
-	_, err := svc.LookupSession(context.Background(), "00112233445566778899aabbccddeeff")
-	if !errors.Is(err, want) {
-		t.Fatalf("err = %v, want %v", err, want)
 	}
 }

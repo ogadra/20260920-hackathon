@@ -22,7 +22,6 @@ import (
 type mockService struct {
 	closeSessionFn     func(ctx context.Context, sessionID string) error
 	resolveSessionFn   func(ctx context.Context, sessionID string) (*service.ResolveResult, error)
-	lookupSessionFn    func(ctx context.Context, hex string) (*service.LookupResult, error)
 	registerRunnerFn   func(ctx context.Context, runnerID, privateHost string) error
 	deregisterRunnerFn func(ctx context.Context, runnerID string) error
 	listBusyRunnersFn  func(ctx context.Context) ([]model.Runner, error)
@@ -36,11 +35,6 @@ func (m *mockService) CloseSession(ctx context.Context, sessionID string) error 
 // ResolveSession はモック ResolveSession を呼び出す。
 func (m *mockService) ResolveSession(ctx context.Context, sessionID string) (*service.ResolveResult, error) {
 	return m.resolveSessionFn(ctx, sessionID)
-}
-
-// LookupSession はモック LookupSession を呼び出す。
-func (m *mockService) LookupSession(ctx context.Context, hex string) (*service.LookupResult, error) {
-	return m.lookupSessionFn(ctx, hex)
 }
 
 // RegisterRunner はモック RegisterRunner を呼び出す。
@@ -66,7 +60,6 @@ func newTestRouter(h *Handler) *gin.Engine {
 	}))
 	r.DELETE("/sessions/:sessionId", h.DeleteSession)
 	r.GET("/resolve/session", h.GetResolveSession)
-	r.GET("/resolve/app", h.GetResolveApp)
 	r.POST("/internal/runners/register", h.PostRegister)
 	r.DELETE("/internal/runners/:runnerId", h.DeleteRunner)
 	r.GET("/runners/busy", h.GetListBusyRunners)
@@ -861,118 +854,5 @@ func TestGetListBusyRunners_ServiceError(t *testing.T) {
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
-	}
-}
-
-// TestGetResolveApp_Existing は既存 session の Host 先頭 hex ラベルから runner host を返すことを検証する。
-func TestGetResolveApp_Existing(t *testing.T) {
-	t.Parallel()
-	h := NewHandler(&mockService{
-		lookupSessionFn: func(_ context.Context, hex string) (*service.LookupResult, error) {
-			if hex != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" {
-				t.Errorf("hex = %q, want %q", hex, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-			}
-			return &service.LookupResult{RunnerHost: "10.0.0.1"}, nil
-		},
-	}, []string{}, "ap-northeast-1")
-	req := httptest.NewRequest(http.MethodGet, "/resolve/app", nil)
-	req.Host = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.ap-northeast-1.internal.example.com"
-	rec := httptest.NewRecorder()
-	newTestRouter(h).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
-	if got := rec.Header().Get(runnerHostHeader); got != "10.0.0.1" {
-		t.Errorf("%s = %q, want %q", runnerHostHeader, got, "10.0.0.1")
-	}
-	for _, c := range rec.Result().Cookies() {
-		if c.Name == "session_id" {
-			t.Errorf("lookup must not set session_id cookie")
-		}
-	}
-}
-
-// TestGetResolveApp_NotFound は不在 hex が 404 SESSION_NOT_FOUND を返すことを検証する。
-func TestGetResolveApp_NotFound(t *testing.T) {
-	t.Parallel()
-	h := NewHandler(&mockService{
-		lookupSessionFn: func(context.Context, string) (*service.LookupResult, error) {
-			return nil, store.ErrNotFound
-		},
-	}, []string{}, "ap-northeast-1")
-	req := httptest.NewRequest(http.MethodGet, "/resolve/app", nil)
-	req.Host = "00112233445566778899aabbccddeeff.ap-northeast-1.internal.example.com"
-	rec := httptest.NewRecorder()
-	newTestRouter(h).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
-	}
-	if !strings.Contains(rec.Body.String(), `"code":"SESSION_NOT_FOUND"`) {
-		t.Errorf("body = %q, want SESSION_NOT_FOUND", rec.Body.String())
-	}
-	if got := rec.Header().Get(runnerHostHeader); got != "" {
-		t.Errorf("%s = %q, want empty", runnerHostHeader, got)
-	}
-}
-
-// TestGetResolveApp_InvalidHost は Host の先頭 hex ラベルが 32 lowercase hex + dot ではない場合に
-// 400 INVALID_REQUEST を返し LookupSession を呼ばないことを検証する。
-func TestGetResolveApp_InvalidHost(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name string
-		host string
-	}{
-		{"no dot", strings.Repeat("a", 32)},
-		{"too short label", "aaaa.ap-northeast-1.internal.example.com"},
-		{"too long label", strings.Repeat("a", 33) + ".ap-northeast-1.internal.example.com"},
-		{"uppercase label", strings.Repeat("A", 32) + ".ap-northeast-1.internal.example.com"},
-		{"non hex label", strings.Repeat("g", 32) + ".ap-northeast-1.internal.example.com"},
-		{"non hex first", "broker.internal.example.com"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			h := NewHandler(&mockService{
-				lookupSessionFn: func(context.Context, string) (*service.LookupResult, error) {
-					t.Error("LookupSession must not be called for invalid host")
-					return nil, nil
-				},
-			}, []string{}, "ap-northeast-1")
-			req := httptest.NewRequest(http.MethodGet, "/resolve/app", nil)
-			req.Host = tc.host
-			rec := httptest.NewRecorder()
-			newTestRouter(h).ServeHTTP(rec, req)
-
-			if rec.Code != http.StatusBadRequest {
-				t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
-			}
-			if !strings.Contains(rec.Body.String(), `"code":"INVALID_REQUEST"`) {
-				t.Errorf("body = %q, want INVALID_REQUEST", rec.Body.String())
-			}
-		})
-	}
-}
-
-// TestGetResolveApp_ServiceError は LookupSession のエラーが 500 INTERNAL_ERROR を返すことを検証する。
-func TestGetResolveApp_ServiceError(t *testing.T) {
-	t.Parallel()
-	h := NewHandler(&mockService{
-		lookupSessionFn: func(context.Context, string) (*service.LookupResult, error) {
-			return nil, errors.New("boom")
-		},
-	}, []string{}, "ap-northeast-1")
-	req := httptest.NewRequest(http.MethodGet, "/resolve/app", nil)
-	req.Host = "00112233445566778899aabbccddeeff.ap-northeast-1.internal.example.com"
-	rec := httptest.NewRecorder()
-	newTestRouter(h).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
-	}
-	if !strings.Contains(rec.Body.String(), `"code":"INTERNAL_ERROR"`) {
-		t.Errorf("body = %q, want INTERNAL_ERROR", rec.Body.String())
 	}
 }

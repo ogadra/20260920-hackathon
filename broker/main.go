@@ -31,7 +31,6 @@ func newRouter(h *handler.Handler) *gin.Engine {
 		r.Use(handler.RequestIDMiddleware(handler.DefaultIDFn))
 		r.DELETE("/sessions/:sessionId", h.DeleteSession)
 		r.GET("/resolve/session", h.GetResolveSession)
-		r.GET("/resolve/app", h.GetResolveApp)
 		r.POST("/internal/runners/register", h.PostRegister)
 		r.DELETE("/internal/runners/:runnerId", h.DeleteRunner)
 		r.GET("/runners/busy", h.GetListBusyRunners)

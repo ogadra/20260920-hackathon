@@ -13,7 +13,7 @@ from diagrams.aws.network import (
     NATGateway,
     Route53,
 )
-from diagrams.aws.security import WAF, SecretsManager
+from diagrams.aws.security import SecretsManager
 from diagrams.custom import Custom
 from diagrams.onprem.client import Users
 from diagrams.onprem.network import Internet
@@ -49,7 +49,6 @@ NS1_ICON = str(HERE / "ns1_icon.png")
 
 def aws_region(name: str, cidr: str, azs: str) -> dict[str, object]:
     with Cluster(name, graph_attr={**CLUSTER_FONT, "margin": "20"}):
-        waf = WAF("AWS WAF\nREGIONAL ACL\napi-ingress ALB")
         ddb = Dynamodb("DynamoDB\nbunshin-runners")
         secret = SecretsManager("Secrets Manager\nbunshin-jev-api-key")
 
@@ -85,7 +84,6 @@ def aws_region(name: str, cidr: str, azs: str) -> dict[str, object]:
 
         broker >> Edge(constraint="false") >> ddb
         vpce_interface >> Edge(label="GetSecretValue", style="dashed", constraint="false") >> secret
-        waf >> Edge(style="invis") >> ddb
 
     return {
         "api_alb": api_alb,

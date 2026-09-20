@@ -11,7 +11,7 @@ _validate-tf-backend-bucket:
     @if [ -z "${TF_BACKEND_BUCKET:-}" ]; then echo "Error: TF_BACKEND_BUCKET must be set (see .env.example)"; exit 1; fi
 
 _validate-loadtest-scenario scenario:
-    @if [ "{{scenario}}" != "session_uniqueness" ] && [ "{{scenario}}" != "concurrent_execute" ] && [ "{{scenario}}" != "concurrent_edit" ] && [ "{{scenario}}" != "perl_hot_reload" ]; then echo "Error: scenario must be 'session_uniqueness', 'concurrent_execute', 'concurrent_edit' or 'perl_hot_reload', got '{{scenario}}'"; exit 1; fi
+    @if [ "{{scenario}}" != "session_uniqueness" ] && [ "{{scenario}}" != "concurrent_execute" ]; then echo "Error: scenario must be 'session_uniqueness' or 'concurrent_execute', got '{{scenario}}'"; exit 1; fi
 
 _validate-loadtest-domain:
     @if [ -z "${LOADTEST_DOMAIN:-}" ]; then echo "Error: LOADTEST_DOMAIN must be set (see .env.example)"; exit 1; fi
@@ -39,7 +39,7 @@ destroy vendor env: (_validate-vendor vendor) (_validate-env env)
 
 # Run a k6 load test scenario against https://${LOADTEST_DOMAIN} (see .env.example)
 loadtest runner_count scenario: _validate-loadtest-domain (_validate-loadtest-scenario scenario)
-    k6 run -e BASE_URL="https://${LOADTEST_DOMAIN}" -e RUNNER_COUNT={{runner_count}} -e PREVIEW_ORIGIN_TEMPLATE="https://{hex}.{stack}.${LOADTEST_DOMAIN}/" loadtest/{{scenario}}.js 2>&1 | tee k6-output.log
+    k6 run -e BASE_URL="https://${LOADTEST_DOMAIN}" -e RUNNER_COUNT={{runner_count}} loadtest/{{scenario}}.js 2>&1 | tee k6-output.log
 
 # Check for session_id duplicates in k6 output (empty output means no duplicates)
 loadtest-check-dup:

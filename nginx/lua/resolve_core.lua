@@ -15,9 +15,6 @@ local allowed_stacks = {}
 local ordered_stacks = {}
 local api_port_number = 0
 local app_port_number = 0
-local cloud_name = ""
-
-local ALLOWED_CLOUDS = { AWS = true, GOOGLE_CLOUD = true }
 
 local function string_header(headers, name, label)
     local value = headers[name]
@@ -35,15 +32,12 @@ local function validate_port(v, name)
     return port
 end
 
-function _M.configure(stack, domain, stack_names, api_port, app_port, cloud)
+function _M.configure(stack, domain, stack_names, api_port, app_port)
     if stack == nil or stack == "" or domain == nil or domain == "" then
         error("resolve_core: STACK_NAME and INTERNAL_DOMAIN must be set")
     end
     if stack_names == nil or stack_names == "" then
         error("resolve_core: BUNSHIN_STACKS must be set")
-    end
-    if cloud == nil or not ALLOWED_CLOUDS[cloud] then
-        error("resolve_core: CLOUD must be one of AWS|GOOGLE_CLOUD")
     end
     api_port_number = validate_port(api_port, "RUNNER_API_PORT")
     app_port_number = validate_port(app_port, "RUNNER_APP_PORT")
@@ -63,7 +57,6 @@ function _M.configure(stack, domain, stack_names, api_port, app_port, cloud)
     internal_domain_name = domain
     allowed_stacks = set
     ordered_stacks = list
-    cloud_name = cloud
 end
 
 function _M.own_stack()
@@ -140,20 +133,14 @@ function _M.last_forwarded_for(value)
     return last
 end
 
-function _M.client_address(from_internal, bunshin_header, forwarded_for, edge_header, remote_addr, remote_port)
+function _M.client_address(from_internal, bunshin_header, forwarded_for, remote_addr, remote_port)
     if from_internal and bunshin_header ~= nil and bunshin_header ~= "" then
         return bunshin_header
     end
-    -- forwarded_for は AWS ALB / edge_header は GCP LB でしか上書き保証がない。
-    -- 経路と異なる方は client 詐称可能なので必ず無視する。
-    if cloud_name == "AWS" then
-        local forwarded = _M.last_forwarded_for(forwarded_for)
-        if forwarded ~= nil then
-            return forwarded
-        end
-    end
-    if cloud_name == "GOOGLE_CLOUD" and edge_header ~= nil and edge_header ~= "" then
-        return edge_header
+    -- X-Forwarded-For は ALB でしか上書き保証がないので、末尾だけを信用する。
+    local forwarded = _M.last_forwarded_for(forwarded_for)
+    if forwarded ~= nil then
+        return forwarded
     end
     return tostring(remote_addr or "") .. ":" .. tostring(remote_port or "")
 end

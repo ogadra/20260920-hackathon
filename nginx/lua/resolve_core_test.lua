@@ -13,7 +13,7 @@ local function check(name, cond)
 end
 
 -- 事前configure。RUNNER_API_PORT=3000 / RUNNER_APP_PORT=5000でdecideの組み立てを検証する。
-core.configure("ap-northeast-1", "example.com", "ap-northeast-1,ap-northeast-3", 3000, 5000, "AWS")
+core.configure("ap-northeast-1", "example.com", "ap-northeast-1,ap-northeast-3", 3000, 5000)
 
 -- broker 非 2xx はそのステータスを保持して終了 (503/500 透過)
 local r = core.decide({ status = 503, header = {} }, STACKS, "example.com")
@@ -77,31 +77,28 @@ check("host_of rejects injection value", core.host_of("evil.example.com/", STACK
 check("host_of rejects nil stack", core.host_of(nil, STACKS, "example.com") == nil)
 
 -- configureはSTACK_NAME / INTERNAL_DOMAIN / BUNSHIN_STACKS / RUNNER_API_PORT / RUNNER_APP_PORT / CLOUD未設定を許さず起動を失敗させる
-check("configure rejects missing stack", not pcall(core.configure, nil, "example.com", "ap-northeast-1", 3000, 5000, "AWS"))
-check("configure rejects empty stack", not pcall(core.configure, "", "example.com", "ap-northeast-1", 3000, 5000, "AWS"))
-check("configure rejects missing domain", not pcall(core.configure, "ap-northeast-1", nil, "ap-northeast-1", 3000, 5000, "AWS"))
-check("configure rejects missing stacks", not pcall(core.configure, "ap-northeast-1", "example.com", nil, 3000, 5000, "AWS"))
-check("configure rejects empty stacks", not pcall(core.configure, "ap-northeast-1", "example.com", "", 3000, 5000, "AWS"))
-check("configure rejects own stack outside allowlist", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-3", 3000, 5000, "AWS"))
-check("configure rejects missing api_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", nil, 5000, "AWS"))
-check("configure rejects non-numeric api_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", "abc", 5000, "AWS"))
-check("configure rejects out-of-range api_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 70000, 5000, "AWS"))
-check("configure rejects zero api_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 0, 5000, "AWS"))
-check("configure rejects fractional api_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 3000.5, 5000, "AWS"))
-check("configure rejects missing app_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 3000, nil, "AWS"))
-check("configure rejects non-numeric app_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 3000, "abc", "AWS"))
-check("configure rejects out-of-range app_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 3000, 70000, "AWS"))
-check("configure rejects zero app_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 3000, 0, "AWS"))
-check("configure rejects fractional app_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 3000, 5000.5, "AWS"))
-check("configure rejects missing cloud", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 3000, 5000, nil))
-check("configure rejects empty cloud", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 3000, 5000, ""))
-check("configure rejects unknown cloud", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 3000, 5000, "azure"))
+check("configure rejects missing stack", not pcall(core.configure, nil, "example.com", "ap-northeast-1", 3000, 5000))
+check("configure rejects empty stack", not pcall(core.configure, "", "example.com", "ap-northeast-1", 3000, 5000))
+check("configure rejects missing domain", not pcall(core.configure, "ap-northeast-1", nil, "ap-northeast-1", 3000, 5000))
+check("configure rejects missing stacks", not pcall(core.configure, "ap-northeast-1", "example.com", nil, 3000, 5000))
+check("configure rejects empty stacks", not pcall(core.configure, "ap-northeast-1", "example.com", "", 3000, 5000))
+check("configure rejects own stack outside allowlist", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-3", 3000, 5000))
+check("configure rejects missing api_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", nil, 5000))
+check("configure rejects non-numeric api_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", "abc", 5000))
+check("configure rejects out-of-range api_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 70000, 5000))
+check("configure rejects zero api_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 0, 5000))
+check("configure rejects fractional api_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 3000.5, 5000))
+check("configure rejects missing app_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 3000, nil))
+check("configure rejects non-numeric app_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 3000, "abc"))
+check("configure rejects out-of-range app_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 3000, 70000))
+check("configure rejects zero app_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 3000, 0))
+check("configure rejects fractional app_port", not pcall(core.configure, "ap-northeast-1", "example.com", "ap-northeast-1", 3000, 5000.5))
 
-core.configure("ap-northeast-1", "example.com", "ap-northeast-1,ap-northeast-2,ap-northeast-3", 3000, 5000, "AWS")
+core.configure("ap-northeast-1", "example.com", "ap-northeast-1,ap-northeast-2,ap-northeast-3", 3000, 5000)
 check("fallback excludes attempted owner", core.fallback_remaining_excluding("ap-northeast-2") == "ap-northeast-3")
-core.configure("ap-northeast-1", "example.com", "ap-northeast-1,ap-northeast-3,ap-northeast-2,ap-northeast-4", 3000, 5000, "AWS")
+core.configure("ap-northeast-1", "example.com", "ap-northeast-1,ap-northeast-3,ap-northeast-2,ap-northeast-4", 3000, 5000)
 check("fallback keeps configured order", core.fallback_remaining_excluding("ap-northeast-2") == "ap-northeast-3,ap-northeast-4")
-core.configure("ap-northeast-1", "example.com", "ap-northeast-1,ap-northeast-3", 3000, 5000, "AWS")
+core.configure("ap-northeast-1", "example.com", "ap-northeast-1,ap-northeast-3", 3000, 5000)
 check("fallback returns nil when no candidate remains", core.fallback_remaining_excluding("ap-northeast-3") == nil)
 
 -- decide_arrival: cookie 無 / 自stack宛 はローカル解決
@@ -172,7 +169,7 @@ check("fallback terminal on empty header exit", r.exit == 503)
 check("fallback terminal on empty header no host", r.forward_host == nil)
 
 -- is_internal_host: <stack>.<internal_domain>の完全一致だけを内部ALBと認める
-core.configure("ap-northeast-1", "internal.example.com", "ap-northeast-1,ap-northeast-3", 3000, 5000, "AWS")
+core.configure("ap-northeast-1", "internal.example.com", "ap-northeast-1,ap-northeast-3", 3000, 5000)
 check("is_internal_host accepts own stack host", core.is_internal_host("ap-northeast-1.internal.example.com"))
 check("is_internal_host accepts peer stack host", core.is_internal_host("ap-northeast-3.internal.example.com"))
 check("is_internal_host rejects public host", not core.is_internal_host("app.example.com"))
@@ -198,44 +195,25 @@ check("last_forwarded_for ignores trailing space", core.last_forwarded_for("1.1.
 check("last_forwarded_for returns nil for empty", core.last_forwarded_for("") == nil)
 check("last_forwarded_for returns nil for nil", core.last_forwarded_for(nil) == nil)
 
--- client_address: cloud=AWS は bunshin(内部転送)→X-Forwarded-For末尾→remote_addr:port。GCP LB でしか上書きできない edge_header は無視する
-core.configure("ap-northeast-1", "example.com", "ap-northeast-1,ap-northeast-3", 3000, 5000, "AWS")
-check("client_address AWS internal picks bunshin header",
-    core.client_address(true, "1.2.3.4:5678", "9.9.9.9:1", "3.3.3.3:9", "10.0.0.1", "12345") == "1.2.3.4:5678")
-check("client_address AWS internal falls to forwarded-for when bunshin empty",
-    core.client_address(true, "", "9.9.9.9:1", "3.3.3.3:9", "10.0.0.1", "12345") == "9.9.9.9:1")
-check("client_address AWS takes only the ALB appended entry",
-    core.client_address(false, "", "spoof:0, 9.9.9.9:1", "", "10.0.0.1", "12345") == "9.9.9.9:1")
-check("client_address AWS internal ignores spoofed edge and falls to remote",
-    core.client_address(true, "", "", "3.3.3.3:9", "10.0.0.1", "12345") == "10.0.0.1:12345")
-check("client_address AWS internal falls to remote when all empty",
-    core.client_address(true, "", "", "", "10.0.0.1", "12345") == "10.0.0.1:12345")
-check("client_address AWS public ignores bunshin header",
-    core.client_address(false, "1.2.3.4:5678", "9.9.9.9:1", "3.3.3.3:9", "10.0.0.1", "12345") == "9.9.9.9:1")
-check("client_address AWS public ignores spoofed edge and falls to remote",
-    core.client_address(false, "spoof", "", "3.3.3.3:9", "10.0.0.1", "12345") == "10.0.0.1:12345")
-check("client_address AWS public falls to remote when all headers nil",
-    core.client_address(false, nil, nil, nil, "10.0.0.1", "12345") == "10.0.0.1:12345")
-
--- client_address: cloud=GOOGLE_CLOUD は bunshin(内部転送)→edge→remote_addr:port。AWS ALB でしか上書きできない forwarded_for は無視する
-core.configure("asia-northeast1", "example.com", "asia-northeast1,asia-northeast2", 3000, 5000, "GOOGLE_CLOUD")
-check("client_address GOOGLE_CLOUD internal picks bunshin header",
-    core.client_address(true, "1.2.3.4:5678", "9.9.9.9:1", "3.3.3.3:9", "10.0.0.1", "12345") == "1.2.3.4:5678")
-check("client_address GOOGLE_CLOUD internal falls to edge when bunshin empty",
-    core.client_address(true, "", "9.9.9.9:1", "3.3.3.3:9", "10.0.0.1", "12345") == "3.3.3.3:9")
-check("client_address GOOGLE_CLOUD internal ignores spoofed forwarded-for and falls to remote",
-    core.client_address(true, "", "spoof:0", "", "10.0.0.1", "12345") == "10.0.0.1:12345")
-check("client_address GOOGLE_CLOUD internal falls to remote when all empty",
-    core.client_address(true, "", "", "", "10.0.0.1", "12345") == "10.0.0.1:12345")
-check("client_address GOOGLE_CLOUD public ignores bunshin header",
-    core.client_address(false, "1.2.3.4:5678", "9.9.9.9:1", "3.3.3.3:9", "10.0.0.1", "12345") == "3.3.3.3:9")
-check("client_address GOOGLE_CLOUD public ignores spoofed forwarded-for and falls to remote",
-    core.client_address(false, "spoof", "spoof:0", "", "10.0.0.1", "12345") == "10.0.0.1:12345")
-check("client_address GOOGLE_CLOUD public falls to remote when all headers nil",
-    core.client_address(false, nil, nil, nil, "10.0.0.1", "12345") == "10.0.0.1:12345")
+-- client_address: bunshin(内部転送)→X-Forwarded-For末尾→remote_addr:port
+core.configure("ap-northeast-1", "example.com", "ap-northeast-1,ap-northeast-3", 3000, 5000)
+check("client_address internal picks bunshin header",
+    core.client_address(true, "1.2.3.4:5678", "9.9.9.9:1", "10.0.0.1", "12345") == "1.2.3.4:5678")
+check("client_address internal falls to forwarded-for when bunshin empty",
+    core.client_address(true, "", "9.9.9.9:1", "10.0.0.1", "12345") == "9.9.9.9:1")
+check("client_address takes only the ALB appended entry",
+    core.client_address(false, "", "spoof:0, 9.9.9.9:1", "10.0.0.1", "12345") == "9.9.9.9:1")
+check("client_address internal falls to remote when all empty",
+    core.client_address(true, "", "", "10.0.0.1", "12345") == "10.0.0.1:12345")
+check("client_address public ignores bunshin header",
+    core.client_address(false, "1.2.3.4:5678", "9.9.9.9:1", "10.0.0.1", "12345") == "9.9.9.9:1")
+check("client_address public falls to remote when bunshin header is spoofed",
+    core.client_address(false, "spoof", "", "10.0.0.1", "12345") == "10.0.0.1:12345")
+check("client_address public falls to remote when all headers nil",
+    core.client_address(false, nil, nil, "10.0.0.1", "12345") == "10.0.0.1:12345")
 
 -- parse_app_host: 32 hex label + 既知stack + internal_domain完全一致だけ通す
-core.configure("ap-northeast-1", "internal.example.com", "ap-northeast-1,ap-northeast-3", 3000, 5000, "AWS")
+core.configure("ap-northeast-1", "internal.example.com", "ap-northeast-1,ap-northeast-3", 3000, 5000)
 local HEX = string.rep("a", 32)
 r = core.parse_app_host(HEX .. ".ap-northeast-1.internal.example.com")
 check("parse_app_host own stack hex", r ~= nil and r.hex == HEX and r.stack == "ap-northeast-1")

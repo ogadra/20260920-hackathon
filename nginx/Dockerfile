@@ -12,7 +12,7 @@ COPY --chown=node:node front/ ./
 RUN pnpm build
 
 # checkov:skip=CKV_DOCKER_2:health check is not needed for config test stage
-FROM openresty/openresty:1.31.1.1-alpine@sha256:5f621903212ed7194a6bd31de7a76c1cfbe92e7b7a6fdb0f2b38626e97bd38c4 AS config-test
+FROM openresty/openresty:1.31.1.1-alpine@sha256:e260a5b63b78700eb8047e934950a17b4ab3980a77ef254ec486fff8ea4617e6 AS config-test
 RUN apk add --no-cache ca-certificates gettext
 COPY nginx/errors.conf /etc/nginx/errors.conf
 COPY nginx/security-headers.conf /etc/nginx/security-headers.conf
@@ -28,7 +28,7 @@ RUN envsubst '${NGINX_RESOLVER} ${BROKER_HOST}' < /etc/nginx/nginx.conf.template
 USER nobody
 
 # checkov:skip=CKV_DOCKER_2:health check is managed by ECS task definition / Kubernetes probes
-FROM openresty/openresty:1.31.1.1-alpine@sha256:5f621903212ed7194a6bd31de7a76c1cfbe92e7b7a6fdb0f2b38626e97bd38c4
+FROM openresty/openresty:1.31.1.1-alpine@sha256:e260a5b63b78700eb8047e934950a17b4ab3980a77ef254ec486fff8ea4617e6
 # html/はrootとして公開するので、openresty同梱の50x.htmlごと捨ててdistだけを置く。
 RUN apk add --no-cache ca-certificates gettext \
     && adduser -D -H -s /sbin/nologin nginx \
